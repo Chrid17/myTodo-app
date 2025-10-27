@@ -1,14 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:my_project/ui/pages/todo_list_page.dart';
-import 'package:my_project/services/notification_service.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await NotificationService.initialize();
-  } catch (e) {
-    print('Notification service initialization failed: $e');
-  }
+void main() {
   runApp(const MyApp());
 }
 
@@ -32,4 +25,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
