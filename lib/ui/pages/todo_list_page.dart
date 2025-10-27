@@ -150,7 +150,7 @@ class _TodoListPageState extends State<TodoListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'My Todos',
+          'TodoFlow',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
