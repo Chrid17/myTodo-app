@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../models/todo.dart';
 import '../../services/todo_service.dart';
+import '../../services/notification_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/todo_item.dart';
 import 'add_todo_page.dart';
 
@@ -22,7 +24,73 @@ class _TodoListPageState extends State<TodoListPage> {
   @override
   void initState() {
     super.initState();
-    _loadTodos();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _loadTodos();
+    await _maybeShowNotificationPrompt();
+  }
+
+  Future<void> _maybeShowNotificationPrompt() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shown = prefs.getBool('notifications_prompt_shown') ?? false;
+      if (shown) return;
+
+      final assetExists = await NotificationService.audioAssetExists();
+
+      // Show a dialog prompting the user to enable notifications / test sound
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Enable notifications & sound'),
+            content: SingleChildScrollView(
+              child: ListBody(
+                children: <Widget>[
+                  const Text(
+                    'To hear reminder sounds, allow notifications and tap "Enable & Test".',
+                  ),
+                  const SizedBox(height: 8),
+                  if (!assetExists)
+                    const Text(
+                      'Note: no audio file found at assets/sounds/notify.mp3. Add a short notify.mp3 file to enable custom sounds.',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('Maybe later'),
+                onPressed: () async {
+                  await prefs.setBool('notifications_prompt_shown', true);
+                  Navigator.of(context).pop();
+                },
+              ),
+              TextButton(
+                child: const Text('Enable & Test'),
+                onPressed: () async {
+                  try {
+                    await NotificationService.playTestSound();
+                  } catch (e) {
+                    // ignore
+                  }
+                  await prefs.setBool('notifications_prompt_shown', true);
+                  await prefs.setBool('notifications_primed', true);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      print('Error showing notification prompt: $e');
+    }
   }
 
   Future<void> _loadTodos() async {
@@ -56,30 +124,31 @@ class _TodoListPageState extends State<TodoListPage> {
   Future<void> _deleteTodo(String id) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Todo'),
-        content: const Text('Are you sure you want to delete this todo?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Todo'),
+            content: const Text('Are you sure you want to delete this todo?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
       await _todoService.deleteTodo(id);
       await _loadTodos();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Todo deleted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Todo deleted')));
       }
     }
   }
@@ -87,21 +156,24 @@ class _TodoListPageState extends State<TodoListPage> {
   Future<void> _clearCompleted() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear Completed'),
-        content: const Text('Are you sure you want to delete all completed todos?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Clear Completed'),
+            content: const Text(
+              'Are you sure you want to delete all completed todos?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Clear'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -118,9 +190,7 @@ class _TodoListPageState extends State<TodoListPage> {
   void _navigateToAddTodo() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AddTodoPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const AddTodoPage()),
     );
 
     if (result == true) {
@@ -131,9 +201,7 @@ class _TodoListPageState extends State<TodoListPage> {
   void _navigateToEditTodo(Todo todo) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => AddTodoPage(todoToEdit: todo),
-      ),
+      MaterialPageRoute(builder: (context) => AddTodoPage(todoToEdit: todo)),
     );
 
     if (result == true) {
@@ -158,6 +226,28 @@ class _TodoListPageState extends State<TodoListPage> {
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            tooltip: 'Play test sound',
+            icon: const Icon(Icons.volume_up),
+            onPressed: () async {
+              try {
+                await NotificationService.playTestSound();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Played test sound / notification'),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to play test sound: $e')),
+                  );
+                }
+              }
+            },
+          ),
           if (_todos.any((todo) => todo.isCompleted))
             IconButton(
               icon: const Icon(Icons.clear_all),
@@ -180,25 +270,35 @@ class _TodoListPageState extends State<TodoListPage> {
                     _FilterChip(
                       label: 'All (${_todos.length})',
                       isSelected: _currentFilter == TodoFilter.all,
-                      onSelected: () => setState(() => _currentFilter = TodoFilter.all),
+                      onSelected:
+                          () => setState(() => _currentFilter = TodoFilter.all),
                     ),
                     const SizedBox(width: 8),
                     _FilterChip(
                       label: 'Active ($activeCount)',
                       isSelected: _currentFilter == TodoFilter.active,
-                      onSelected: () => setState(() => _currentFilter = TodoFilter.active),
+                      onSelected:
+                          () => setState(
+                            () => _currentFilter = TodoFilter.active,
+                          ),
                     ),
                     const SizedBox(width: 8),
                     _FilterChip(
                       label: 'Done ($completedCount)',
                       isSelected: _currentFilter == TodoFilter.completed,
-                      onSelected: () => setState(() => _currentFilter = TodoFilter.completed),
+                      onSelected:
+                          () => setState(
+                            () => _currentFilter = TodoFilter.completed,
+                          ),
                     ),
                     const SizedBox(width: 8),
                     _FilterChip(
                       label: 'Overdue ($overdueCount)',
                       isSelected: _currentFilter == TodoFilter.overdue,
-                      onSelected: () => setState(() => _currentFilter = TodoFilter.overdue),
+                      onSelected:
+                          () => setState(
+                            () => _currentFilter = TodoFilter.overdue,
+                          ),
                       isOverdue: true,
                     ),
                   ],
@@ -209,26 +309,27 @@ class _TodoListPageState extends State<TodoListPage> {
 
           // Todo list
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredTodos.isEmpty
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _filteredTodos.isEmpty
                     ? _buildEmptyState()
                     : RefreshIndicator(
-                        onRefresh: _loadTodos,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.only(top: 8, bottom: 80),
-                          itemCount: _filteredTodos.length,
-                          itemBuilder: (context, index) {
-                            final todo = _filteredTodos[index];
-                            return TodoItem(
-                              todo: todo,
-                              onToggle: () => _toggleTodo(todo),
-                              onDelete: () => _deleteTodo(todo.id),
-                              onTap: () => _navigateToEditTodo(todo),
-                            );
-                          },
-                        ),
+                      onRefresh: _loadTodos,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(top: 8, bottom: 80),
+                        itemCount: _filteredTodos.length,
+                        itemBuilder: (context, index) {
+                          final todo = _filteredTodos[index];
+                          return TodoItem(
+                            todo: todo,
+                            onToggle: () => _toggleTodo(todo),
+                            onDelete: () => _deleteTodo(todo.id),
+                            onTap: () => _navigateToEditTodo(todo),
+                          );
+                        },
                       ),
+                    ),
           ),
         ],
       ),
@@ -303,7 +404,7 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     Color backgroundColor;
     Color textColor;
-    
+
     if (isOverdue && isSelected) {
       backgroundColor = Colors.red;
       textColor = Colors.white;
