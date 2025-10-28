@@ -32,6 +32,11 @@
 
   <title>my_project</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    // Optional: expose VAPID public key to push.js via global
+    window.SUPABASE_VAPID_PUBLIC_KEY = '';
+  </script>
+  <script type="module" src="/push.js"></script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
