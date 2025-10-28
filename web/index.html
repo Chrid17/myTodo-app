@@ -35,8 +35,17 @@
   <script>
     // Optional: expose VAPID public key to push.js via global
     window.SUPABASE_VAPID_PUBLIC_KEY = '';
+    window.SUPABASE_URL = 'https://pujfapldlclvykjjphjy.supabase.co';
+    window.SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB1amZhcGxkbGNsdnlrampwaGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2MDMyNzIsImV4cCI6MjA3NzE3OTI3Mn0.OT1S6YpoMT5q_fzuDx21BX0FoRZi8xURK-MBugeuSEU';
   </script>
-  <script type="module" src="/push.js"></script>
+  <script type="module">
+    import { registerAndSubscribePush } from './push.js';
+    // Attempt subscription on load; you can also call this after login
+    const url = window.SUPABASE_URL;
+    const anon = window.SUPABASE_ANON;
+    const userId = null; // set after auth if available; null allowed by RLS only if you change policy
+    registerAndSubscribePush(url, anon, userId);
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
