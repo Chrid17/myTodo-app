@@ -13,7 +13,9 @@ async function urlBase64ToUint8Array(base64String) {
 export async function registerAndSubscribePush(supabaseUrl, anonKey, userId) {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return { ok: false, reason: 'unsupported' };
   try {
-    const reg = await navigator.serviceWorker.register('/push-sw.js');
+    // Register SW relative to base href (supports GitHub Pages subpath)
+    const swPath = new URL('push-sw.js', document.baseURI).pathname;
+    const reg = await navigator.serviceWorker.register(swPath);
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       if (!VAPID_PUBLIC_KEY) return { ok: false, reason: 'missing_vapid' };
