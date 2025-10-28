@@ -226,6 +226,35 @@ class _TodoListPageState extends State<TodoListPage> {
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Notification sound',
+            icon: const Icon(Icons.music_note),
+            onSelected: (value) async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('selected_sound', value);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Sound set to: ' +
+                          (value == 'default' ? 'System default' : value),
+                    ),
+                  ),
+                );
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'default',
+                    child: Text('System default'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'notify',
+                    child: Text('Notify (bundled)'),
+                  ),
+                ],
+          ),
           IconButton(
             tooltip: 'Play test sound',
             icon: const Icon(Icons.volume_up),

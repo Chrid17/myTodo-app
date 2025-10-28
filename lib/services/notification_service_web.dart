@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'dart:html' as html;
 import '../models/todo.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   static final Map<String, Timer> _timers = {};
@@ -24,7 +25,12 @@ class NotificationService {
 
     // Preload audio asset (if present in assets)
     try {
-      _audio = html.AudioElement('assets/sounds/notify.mp3')..preload = 'auto';
+      final sound = await _resolveSelectedSound();
+      final assetPath = sound == null ? null : 'assets/sounds/${sound}.mp3';
+      _audio =
+          assetPath != null
+              ? (html.AudioElement(assetPath)..preload = 'auto')
+              : null;
     } catch (e) {
       print('Audio preload failed: $e');
       _audio = null;
@@ -36,7 +42,7 @@ class NotificationService {
       final id = todo.id;
       final duration = todo.createdAt.difference(DateTime.now());
 
-      // Cancel existing timer if any
+      // Cancel existing timers if any (both main and pre)
       await cancelNotification(id);
 
       // If duration is negative or zero, show immediately
@@ -49,6 +55,27 @@ class NotificationService {
         _showNotification(todo);
         _timers.remove(id);
       });
+
+      // For high priority, schedule a 5-minute prior reminder
+      if (todo.priority == Priority.high) {
+        final DateTime preTime = todo.createdAt.subtract(
+          const Duration(minutes: 5),
+        );
+        final int preMs = preTime.difference(DateTime.now()).inMilliseconds;
+        if (preMs > 0) {
+          final preId = '${id}_pre';
+          _timers[preId] = Timer(Duration(milliseconds: preMs), () {
+            try {
+              final title = 'Due soon: ${todo.title}';
+              final body = 'Starting in 5 minutes';
+              if (html.Notification.supported &&
+                  html.Notification.permission == 'granted') {
+                html.Notification(title, body: body, tag: preId);
+              }
+            } catch (_) {}
+          });
+        }
+      }
     }
   }
 
@@ -94,6 +121,8 @@ class NotificationService {
   static Future<void> cancelNotification(String todoId) async {
     final timer = _timers.remove(todoId);
     timer?.cancel();
+    final preTimer = _timers.remove('${todoId}_pre');
+    preTimer?.cancel();
   }
 
   static Future<void> cancelAllNotifications() async {
@@ -129,10 +158,12 @@ class NotificationService {
   // Check if the audio asset exists (returns false if 404)
   static Future<bool> audioAssetExists() async {
     try {
-      final request = await html.HttpRequest.request(
-        'assets/sounds/notify.mp3',
-        method: 'GET',
-      );
+      final sound = await _resolveSelectedSound();
+      final path =
+          sound == null
+              ? 'assets/sounds/notify.mp3'
+              : 'assets/sounds/${sound}.mp3';
+      final request = await html.HttpRequest.request(path, method: 'GET');
       return request.status == 200;
     } catch (e) {
       // Request failed (likely 404 or blocked)
@@ -140,13 +171,14 @@ class NotificationService {
     }
   }
 
-  // Generate a short 16-bit PCM WAV data URI (sine beep) so web can play without an asset
-  static String _generateBeepDataUri({
-    int freq = 880,
-    int durationMs = 250,
-    int sampleRate = 44100,
-  }) {
-    final numSamples = (sampleRate * durationMs / 1000).round();
+  // Generate a pleasant two-tone chime (no external asset) as a 16-bit PCM WAV data URI.
+  // Tone A: 660 Hz (120 ms), short pause (20 ms), Tone B: 880 Hz (140 ms). Applies fade-in/out.
+  static String _generateBeepDataUri({int sampleRate = 44100}) {
+    const int toneALenMs = 120;
+    const int gapMs = 20;
+    const int toneBLenMs = 140;
+    final int totalMs = toneALenMs + gapMs + toneBLenMs;
+    final int numSamples = (sampleRate * totalMs / 1000).round();
     final bytes = ByteData(44 + numSamples * 2);
 
     // RIFF header
@@ -180,15 +212,60 @@ class NotificationService {
     bytes.setUint8(39, 'a'.codeUnitAt(0));
     bytes.setUint32(40, numSamples * 2, Endian.little);
 
-    // Fill samples
+    int toneASamples = (sampleRate * toneALenMs / 1000).round();
+    int gapSamples = (sampleRate * gapMs / 1000).round();
+    int toneBSamples = (sampleRate * toneBLenMs / 1000).round();
+
     for (int i = 0; i < numSamples; i++) {
-      final t = i / sampleRate;
-      final sample = (32767 * 0.5 * (math.sin(2 * math.pi * freq * t))).round();
-      bytes.setInt16(44 + i * 2, sample, Endian.little);
+      double sample = 0.0;
+      if (i < toneASamples) {
+        // Tone A: 660 Hz with fade in/out
+        final t = i / sampleRate;
+        final env = _envelope(i, toneASamples);
+        sample = env * math.sin(2 * math.pi * 660 * t);
+      } else if (i >= toneASamples + gapSamples) {
+        // Tone B: 880 Hz with fade in/out
+        final i2 = i - (toneASamples + gapSamples);
+        final t = i2 / sampleRate;
+        final env = _envelope(i2, toneBSamples);
+        sample = env * math.sin(2 * math.pi * 880 * t);
+      } else {
+        sample = 0.0; // gap
+      }
+
+      final intInt16 = (32767 * 0.5 * sample).round();
+      bytes.setInt16(44 + i * 2, intInt16, Endian.little);
     }
 
     final uint8 = bytes.buffer.asUint8List();
     final base64Data = base64Encode(uint8);
     return 'data:audio/wav;base64,$base64Data';
+  }
+
+  // Simple linear fade-in/out envelope to avoid clicks
+  static double _envelope(int index, int total) {
+    const int fadeLen = 200; // samples
+    final int fadeInEnd = fadeLen;
+    final int fadeOutStart = total - fadeLen;
+    if (index < 0 || index >= total) return 0.0;
+    if (index < fadeInEnd) {
+      return index / fadeLen;
+    }
+    if (index > fadeOutStart) {
+      return (total - index) / fadeLen;
+    }
+    return 1.0;
+  }
+
+  // Resolve selected sound from SharedPreferences, same key as mobile.
+  static Future<String?> _resolveSelectedSound() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString('selected_sound');
+      if (name == null || name == 'default') return null;
+      return name;
+    } catch (_) {
+      return null;
+    }
   }
 }
