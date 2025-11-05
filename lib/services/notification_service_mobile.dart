@@ -103,7 +103,7 @@ class NotificationService {
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
-            sound: selectedSound == null ? null : '${selectedSound}.wav',
+            sound: selectedSound == null ? null : '$selectedSound.wav',
             // Elevate high priority to timeSensitive on iOS 15+
             interruptionLevel: switch (todo.priority) {
               model.Priority.low => fln.InterruptionLevel.passive,
@@ -208,7 +208,7 @@ class NotificationService {
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
-            sound: selectedSound == null ? null : '${selectedSound}.wav',
+            sound: selectedSound == null ? null : '$selectedSound.wav',
           );
 
       final fln.NotificationDetails notificationDetails =

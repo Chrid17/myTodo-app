@@ -236,8 +236,8 @@ class _TodoListPageState extends State<TodoListPage> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      'Sound set to: ' +
-                          (value == 'default' ? 'System default' : value),
+                      
+                      'Sound set to: ${value == 'default' ? 'System default' : value}',
                     ),
                   ),
                 );

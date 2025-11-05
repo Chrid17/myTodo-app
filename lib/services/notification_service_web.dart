@@ -26,7 +26,7 @@ class NotificationService {
     // Preload audio asset (if present in assets)
     try {
       final sound = await _resolveSelectedSound();
-      final assetPath = sound == null ? null : 'assets/sounds/${sound}.mp3';
+      final assetPath = sound == null ? null : 'assets/sounds/$sound.mp3';
       _audio =
           assetPath != null
               ? (html.AudioElement(assetPath)..preload = 'auto')
@@ -108,9 +108,7 @@ class NotificationService {
       }
 
       // If no asset audio, try generated beep data URI
-      if (_generatedBeepDataUri == null) {
-        _generatedBeepDataUri = _generateBeepDataUri();
-      }
+      _generatedBeepDataUri ??= _generateBeepDataUri();
       final gen = html.AudioElement(_generatedBeepDataUri!)..preload = 'auto';
       gen.play();
     } catch (e) {
@@ -145,9 +143,7 @@ class NotificationService {
         return;
       }
 
-      if (_generatedBeepDataUri == null) {
-        _generatedBeepDataUri = _generateBeepDataUri();
-      }
+      _generatedBeepDataUri ??= _generateBeepDataUri();
       final gen = html.AudioElement(_generatedBeepDataUri!)..preload = 'auto';
       await gen.play();
     } catch (e) {
@@ -162,7 +158,7 @@ class NotificationService {
       final path =
           sound == null
               ? 'assets/sounds/notify.mp3'
-              : 'assets/sounds/${sound}.mp3';
+              : 'assets/sounds/$sound.mp3';
       final request = await html.HttpRequest.request(path, method: 'GET');
       return request.status == 200;
     } catch (e) {
