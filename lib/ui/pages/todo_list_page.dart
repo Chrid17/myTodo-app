@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import '../../models/todo.dart';
 import '../../services/supabase_todo_service.dart';
@@ -32,6 +33,9 @@ class _TodoListPageState extends State<TodoListPage> {
   // Multi-select feature
   bool _isSelectionMode = false;
   final Set<String> _selectedTodoIds = {};
+  
+  // iOS Safari banner
+  bool _showIOSBanner = false;
 
   Stream<List<Todo>>? _todosStream;
   StreamSubscription<List<Todo>>? _todosSub;
@@ -49,7 +53,34 @@ class _TodoListPageState extends State<TodoListPage> {
       if (!mounted) return;
       setState(() {});
     });
+    _checkIOSSafari();
     _init();
+  }
+  
+  Future<void> _checkIOSSafari() async {
+    if (!kIsWeb) return;
+    
+    final prefs = await SharedPreferences.getInstance();
+    final dismissed = prefs.getBool('ios_banner_dismissed') ?? false;
+    if (dismissed) return;
+    
+    // Check if running on iOS Safari (web)
+    // We'll show the banner for all mobile web users as a helpful tip
+    if (mounted) {
+      setState(() {
+        _showIOSBanner = true;
+      });
+    }
+  }
+  
+  Future<void> _dismissIOSBanner() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('ios_banner_dismissed', true);
+    if (mounted) {
+      setState(() {
+        _showIOSBanner = false;
+      });
+    }
   }
   
   void _showReminderDialog(String title, String body) {
@@ -487,6 +518,84 @@ class _TodoListPageState extends State<TodoListPage> {
                       child: Text(
                         'Viewing a shared list (read-only).',
                         style: TextStyle(color: Color(0xFF1D4ED8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // iOS Safari Banner - Instructions for adding to Home Screen
+            if (_showIOSBanner && kIsWeb)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF9500), Color(0xFFFF6B00)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.orange.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.phone_iphone, color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'iOS Users: Get Notifications!',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                          onPressed: _dismissIOSBanner,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'To receive notifications on iPhone/iPad:',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _buildIOSStep('1', 'Tap Share'),
+                        const Icon(Icons.ios_share, color: Colors.white, size: 16),
+                        const SizedBox(width: 8),
+                        _buildIOSStep('2', 'Add to Home Screen'),
+                        const Icon(Icons.add_box_outlined, color: Colors.white, size: 16),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Then open from Home Screen & allow notifications',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
                       ),
                     ),
                   ],
@@ -931,6 +1040,45 @@ class _TodoListPageState extends State<TodoListPage> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildIOSStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.3),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
     );
   }
