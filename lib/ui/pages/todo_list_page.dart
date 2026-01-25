@@ -60,8 +60,8 @@ class _TodoListPageState extends State<TodoListPage> {
   Future<void> _checkIOSSafari() async {
     if (!kIsWeb) return;
     
-    final prefs = await SharedPreferences.getInstance();
-    final dismissed = prefs.getBool('ios_banner_dismissed') ?? false;
+    final preferences = await SharedPreferences.getInstance();
+    final dismissed = preferences.getBool('ios_banner_dismissed') ?? false;
     if (dismissed) return;
     
     // Check if running on iOS Safari (web)
@@ -74,8 +74,8 @@ class _TodoListPageState extends State<TodoListPage> {
   }
   
   Future<void> _dismissIOSBanner() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('ios_banner_dismissed', true);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('ios_banner_dismissed', true);
     if (mounted) {
       setState(() {
         _showIOSBanner = false;
@@ -202,8 +202,8 @@ class _TodoListPageState extends State<TodoListPage> {
 
   Future<void> _maybeShowNotificationPrompt() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final shown = prefs.getBool('notifications_prompt_shown') ?? false;
+      final preferences = await SharedPreferences.getInstance();
+      final shown = preferences.getBool('notifications_prompt_shown') ?? false;
       if (shown) return;
 
       if (!mounted) return;
@@ -226,7 +226,7 @@ class _TodoListPageState extends State<TodoListPage> {
               TextButton(
                 child: const Text('Maybe later'),
                 onPressed: () async {
-                  await prefs.setBool('notifications_prompt_shown', true);
+                  await preferences.setBool('notifications_prompt_shown', true);
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
                   }
@@ -240,8 +240,8 @@ class _TodoListPageState extends State<TodoListPage> {
                   } catch (e) {
                     // ignore
                   }
-                  await prefs.setBool('notifications_prompt_shown', true);
-                  await prefs.setBool('notifications_primed', true);
+                  await preferences.setBool('notifications_prompt_shown', true);
+                  await preferences.setBool('notifications_primed', true);
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
                   }
