@@ -33,18 +33,47 @@
   <title>my_project</title>
   <link rel="manifest" href="manifest.json">
   <script>
-    // Optional: expose VAPID public key to push.js via global
-    window.SUPABASE_VAPID_PUBLIC_KEY = '';
+    // VAPID public key for Web Push notifications
+    window.SUPABASE_VAPID_PUBLIC_KEY = 'BO4yFsSAS7yzsoyY1EEHGDZgdO2dIXhFrWRXHQDked9r0AuZcq6udQYxImmVC5Nu08XilvSNs48zXUCNXwmPuuo';
     window.SUPABASE_URL = 'https://pujfapldlclvykjjphjy.supabase.co';
     window.SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB1amZhcGxkbGNsdnlrampwaGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2MDMyNzIsImV4cCI6MjA3NzE3OTI3Mn0.OT1S6YpoMT5q_fzuDx21BX0FoRZi8xURK-MBugeuSEU';
   </script>
   <script type="module">
-    import { registerAndSubscribePush } from './push.js';
-    // Attempt subscription on load; you can also call this after login
-    const url = window.SUPABASE_URL;
-    const anon = window.SUPABASE_ANON;
-    const userId = null; // set after auth if available; null allowed by RLS only if you change policy
-    registerAndSubscribePush(url, anon, userId);
+    import { registerAndSubscribePush, isPushSupported } from './push.js';
+    
+    // Function to register push notifications
+    async function initPushNotifications() {
+      if (!isPushSupported()) {
+        console.log('Push notifications not supported on this browser');
+        return;
+      }
+      
+      const url = window.SUPABASE_URL;
+      const anon = window.SUPABASE_ANON;
+      const userId = null; // Will be set by Flutter after auth
+      
+      const result = await registerAndSubscribePush(url, anon, userId);
+      console.log('Push registration result:', result);
+    }
+    
+    // Register on first user interaction (required by some browsers)
+    let pushInitialized = false;
+    function tryInitPush() {
+      if (!pushInitialized) {
+        pushInitialized = true;
+        initPushNotifications();
+      }
+    }
+    
+    // Try to register after page load and on first interaction
+    window.addEventListener('load', () => {
+      // Delay slightly to let Flutter initialize
+      setTimeout(tryInitPush, 2000);
+    });
+    
+    // Also register on first user interaction (handles stricter browsers)
+    document.addEventListener('click', tryInitPush, { once: true });
+    document.addEventListener('touchstart', tryInitPush, { once: true });
   </script>
 </head>
 <body>

@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/todo.dart';
 import 'notification_service.dart';
+import 'push_notification_service.dart';
 import 'supabase_client.dart';
 import 'todo_service.dart' as local_cache;
 
@@ -117,8 +118,11 @@ class SupabaseTodoService {
 
     final todo = _fromRow(inserted);
 
-    // schedule notification as before
+    // Schedule local notification (for when app is open)
     await NotificationService.scheduleNotification(todo);
+    
+    // Schedule push notification (for when app/browser is closed)
+    await PushNotificationService.scheduleNotification(todo);
 
     // Update cache
     final todos = await getTodos();
@@ -148,8 +152,10 @@ class SupabaseTodoService {
 
     if (t.isCompleted) {
       await NotificationService.cancelNotification(t.id);
+      await PushNotificationService.cancelNotification(t.id);
     } else {
       await NotificationService.rescheduleNotification(t);
+      await PushNotificationService.rescheduleNotification(t);
     }
 
     final todos = await getTodos();
@@ -165,6 +171,7 @@ class SupabaseTodoService {
     await _db.from(table).delete().eq('id', id).eq('user_id', user.id);
 
     await NotificationService.cancelNotification(id);
+    await PushNotificationService.cancelNotification(id);
 
     final todos = await getTodos();
     await local_cache.TodoService().saveTodos(todos);

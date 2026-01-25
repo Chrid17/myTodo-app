@@ -1,4 +1,4 @@
-// Replace with your VAPID public key from Supabase function secrets
+// Web Push notification registration
 const VAPID_PUBLIC_KEY = (window.SUPABASE_VAPID_PUBLIC_KEY || '').trim();
 
 async function urlBase64ToUint8Array(base64String) {
@@ -10,24 +10,72 @@ async function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+// Check if push notifications are supported
+export function isPushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+// Get current notification permission status
+export function getNotificationPermission() {
+  if (!('Notification' in window)) return 'unsupported';
+  return Notification.permission;
+}
+
+// Request notification permission
+export async function requestNotificationPermission() {
+  if (!('Notification' in window)) return 'unsupported';
+  return await Notification.requestPermission();
+}
+
+// Register service worker and subscribe to push notifications
 export async function registerAndSubscribePush(supabaseUrl, anonKey, userId) {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return { ok: false, reason: 'unsupported' };
+  if (!isPushSupported()) {
+    console.log('Push notifications not supported');
+    return { ok: false, reason: 'unsupported' };
+  }
+  
   try {
-    // Register SW relative to base href (supports GitHub Pages subpath)
+    // Request notification permission first
+    const permission = await requestNotificationPermission();
+    if (permission !== 'granted') {
+      console.log('Notification permission denied');
+      return { ok: false, reason: 'permission_denied' };
+    }
+
+    // Register Service Worker relative to base href (supports GitHub Pages subpath)
     const swPath = new URL('push-sw.js', document.baseURI).pathname;
-    const reg = await navigator.serviceWorker.register(swPath);
+    console.log('Registering service worker at:', swPath);
+    
+    const reg = await navigator.serviceWorker.register(swPath, { scope: document.baseURI });
+    console.log('Service worker registered:', reg);
+    
+    // Wait for the service worker to be ready
+    await navigator.serviceWorker.ready;
+    console.log('Service worker ready');
+
+    // Check for existing subscription
     let sub = await reg.pushManager.getSubscription();
+    
+    // If no subscription or VAPID key changed, create new subscription
     if (!sub) {
-      if (!VAPID_PUBLIC_KEY) return { ok: false, reason: 'missing_vapid' };
+      if (!VAPID_PUBLIC_KEY) {
+        console.log('Missing VAPID public key');
+        return { ok: false, reason: 'missing_vapid' };
+      }
+      
+      console.log('Creating new push subscription...');
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: await urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
+      console.log('Push subscription created:', sub.endpoint);
     }
 
-    // Send subscription to Supabase REST
+    // Send subscription to Supabase REST API
     const { endpoint, keys } = sub.toJSON();
-    await fetch(`${supabaseUrl}/rest/v1/push_subscriptions`, {
+    console.log('Saving subscription to Supabase...');
+    
+    const response = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -43,10 +91,27 @@ export async function registerAndSubscribePush(supabaseUrl, anonKey, userId) {
       }),
     });
 
-    return { ok: true };
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to save subscription:', errorText);
+      // Don't fail - subscription still works, just won't persist across sessions
+    } else {
+      console.log('Push subscription saved to Supabase');
+    }
+
+    return { ok: true, subscription: sub };
   } catch (e) {
+    console.error('Push registration error:', e);
     return { ok: false, reason: String(e) };
   }
 }
+
+// Expose functions globally for Flutter to call
+window.pushNotifications = {
+  isPushSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+  registerAndSubscribePush,
+};
 
 
