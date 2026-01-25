@@ -28,6 +28,10 @@ class _TodoListPageState extends State<TodoListPage> {
   Priority _selectedPriority = Priority.medium;
   DateTime? _selectedDueDate;
   bool get _isReadOnly => widget.readOnly && (widget.sharedTodos != null);
+  
+  // Multi-select feature
+  bool _isSelectionMode = false;
+  final Set<String> _selectedTodoIds = {};
 
   Stream<List<Todo>>? _todosStream;
   StreamSubscription<List<Todo>>? _todosSub;
@@ -250,6 +254,99 @@ class _TodoListPageState extends State<TodoListPage> {
     }
   }
 
+  // Multi-select methods
+  void _toggleSelectionMode() {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      if (!_isSelectionMode) {
+        _selectedTodoIds.clear();
+      }
+    });
+  }
+
+  void _toggleTodoSelection(String todoId) {
+    setState(() {
+      if (_selectedTodoIds.contains(todoId)) {
+        _selectedTodoIds.remove(todoId);
+      } else {
+        _selectedTodoIds.add(todoId);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedTodoIds.clear();
+      for (final todo in _filteredTodos) {
+        _selectedTodoIds.add(todo.id);
+      }
+    });
+  }
+
+  void _deselectAll() {
+    setState(() {
+      _selectedTodoIds.clear();
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selectedTodoIds.isEmpty) return;
+    
+    final count = _selectedTodoIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Tasks'),
+        content: Text('Are you sure you want to delete $count task${count > 1 ? 's' : ''}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      for (final id in _selectedTodoIds.toList()) {
+        await _todoService.deleteTodo(id);
+      }
+      _selectedTodoIds.clear();
+      _isSelectionMode = false;
+      await _loadTodos();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$count task${count > 1 ? 's' : ''} deleted')),
+        );
+      }
+    }
+  }
+
+  Future<void> _completeSelected() async {
+    if (_selectedTodoIds.isEmpty) return;
+    
+    for (final id in _selectedTodoIds.toList()) {
+      final todo = _todos.firstWhere((t) => t.id == id, orElse: () => _todos.first);
+      if (!todo.isCompleted) {
+        final updatedTodo = todo.copyWith(isCompleted: true);
+        await _todoService.updateTodo(updatedTodo);
+      }
+    }
+    _selectedTodoIds.clear();
+    _isSelectionMode = false;
+    await _loadTodos();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tasks marked as complete')),
+      );
+    }
+  }
+
   void _editTask(Todo todo) {
     if (_isReadOnly) return;
     // Populate the form with the task data
@@ -410,10 +507,22 @@ class _TodoListPageState extends State<TodoListPage> {
                   // Title
                   Row(
                     children: [
+                      const SizedBox(width: 16),
+                      if (!_isReadOnly)
+                        IconButton(
+                          icon: Icon(
+                            _isSelectionMode ? Icons.close : Icons.checklist,
+                            color: const Color(0xFF7C3AED),
+                          ),
+                          tooltip: _isSelectionMode ? 'Cancel Selection' : 'Select Multiple',
+                          onPressed: _toggleSelectionMode,
+                        ),
                       Expanded(
                         child: Center(
                           child: Text(
-                            'My Tasks',
+                            _isSelectionMode 
+                                ? '${_selectedTodoIds.length} Selected'
+                                : 'My Tasks',
                             style: const TextStyle(
                               fontSize: 36,
                               fontWeight: FontWeight.bold,
@@ -422,7 +531,7 @@ class _TodoListPageState extends State<TodoListPage> {
                           ),
                         ),
                       ),
-                      if (!_isReadOnly) ...[
+                      if (!_isReadOnly && !_isSelectionMode) ...[
                         IconButton(
                           icon: const Icon(Icons.save_outlined, color: Color(0xFF7C3AED)),
                           tooltip: 'Save',
@@ -435,6 +544,15 @@ class _TodoListPageState extends State<TodoListPage> {
                           onPressed: _loadTodos,
                         ),
                       ],
+                      if (_isSelectionMode) ...[
+                        IconButton(
+                          icon: const Icon(Icons.select_all, color: Color(0xFF7C3AED)),
+                          tooltip: 'Select All',
+                          onPressed: _selectAll,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      const SizedBox(width: 8),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -755,11 +873,62 @@ class _TodoListPageState extends State<TodoListPage> {
                                 onToggle: _isReadOnly ? () {} : () => _toggleTodo(todo),
                                 onDelete: _isReadOnly ? () {} : () => _deleteTodo(todo.id),
                                 onEdit: _isReadOnly ? () {} : () => _editTask(todo),
+                                isSelectionMode: _isSelectionMode,
+                                isSelected: _selectedTodoIds.contains(todo.id),
+                                onSelectionToggle: () => _toggleTodoSelection(todo.id),
                               );
                             },
                           ),
                         ),
             ),
+            
+            // Selection Mode Action Bar
+            if (_isSelectionMode)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _selectedTodoIds.isEmpty ? null : _completeSelected,
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: const Text('Complete'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.green,
+                            side: const BorderSide(color: Colors.green),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _selectedTodoIds.isEmpty ? null : _deleteSelected,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Delete'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -914,80 +1083,114 @@ class _TaskCard extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback onSelectionToggle;
 
   const _TaskCard({
     required this.todo,
     required this.onToggle,
     required this.onDelete,
     required this.onEdit,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    required this.onSelectionToggle,
   });
 
   @override
   Widget build(BuildContext context) {
     final isOverdue = todo.isOverdue;
     
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: isOverdue 
-                ? const Color(0xFFEF4444).withValues(alpha: 0.1) 
-                : Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Priority Indicator Strip (Left Border)
-              Container(
-                width: 4,
-                color: isOverdue 
-                    ? const Color(0xFFEF4444) 
-                    : todo.isCompleted 
-                        ? const Color(0xFF10B981) 
-                        : _getPriorityColor(todo.priority),
-              ),
-              
-              // Content
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Checkbox
-                      GestureDetector(
-                        onTap: onToggle,
-                        child: Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: todo.isCompleted 
-                                ? const Color(0xFF10B981) 
-                                : Colors.transparent,
-                            border: Border.all(
-                              color: todo.isCompleted 
-                                  ? const Color(0xFF10B981) 
-                                  : Colors.grey.shade300,
-                              width: 2,
+    return GestureDetector(
+      onTap: isSelectionMode ? onSelectionToggle : null,
+      onLongPress: !isSelectionMode ? onSelectionToggle : null,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFE9D5FF) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: isSelected ? Border.all(color: const Color(0xFF7C3AED), width: 2) : null,
+          boxShadow: [
+            BoxShadow(
+              color: isOverdue 
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.1) 
+                  : Colors.black.withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Priority Indicator Strip (Left Border)
+                Container(
+                  width: 4,
+                  color: isOverdue 
+                      ? const Color(0xFFEF4444) 
+                      : todo.isCompleted 
+                          ? const Color(0xFF10B981) 
+                          : _getPriorityColor(todo.priority),
+                ),
+                
+                // Selection Checkbox (only in selection mode)
+                if (isSelectionMode)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Center(
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isSelected ? const Color(0xFF7C3AED) : Colors.transparent,
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF7C3AED) : Colors.grey.shade400,
+                            width: 2,
+                          ),
+                        ),
+                        child: isSelected
+                            ? const Icon(Icons.check, size: 18, color: Colors.white)
+                            : null,
+                      ),
+                    ),
+                  ),
+                
+                // Content
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Checkbox (hidden in selection mode)
+                        if (!isSelectionMode)
+                          GestureDetector(
+                            onTap: onToggle,
+                            child: Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: todo.isCompleted 
+                                    ? const Color(0xFF10B981) 
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: todo.isCompleted 
+                                      ? const Color(0xFF10B981) 
+                                      : Colors.grey.shade300,
+                                  width: 2,
+                                ),
+                              ),
+                              child: todo.isCompleted
+                                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                                  : null,
                             ),
                           ),
-                          child: todo.isCompleted
-                              ? const Icon(Icons.check, size: 16, color: Colors.white)
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
+                        if (!isSelectionMode) const SizedBox(width: 12),
                       
                       // Text Content
                       Expanded(
@@ -1110,6 +1313,7 @@ class _TaskCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }
