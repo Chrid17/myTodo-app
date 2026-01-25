@@ -4,6 +4,7 @@ import 'dart:async';
 import '../../models/todo.dart';
 import '../../services/supabase_todo_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/platform_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
@@ -60,12 +61,13 @@ class _TodoListPageState extends State<TodoListPage> {
   Future<void> _checkIOSSafari() async {
     if (!kIsWeb) return;
     
+    // Only show banner for iOS users
+    if (!isIOSSafari()) return;
+    
     final preferences = await SharedPreferences.getInstance();
     final dismissed = preferences.getBool('ios_banner_dismissed') ?? false;
     if (dismissed) return;
     
-    // Check if running on iOS Safari (web)
-    // We'll show the banner for all mobile web users as a helpful tip
     if (mounted) {
       setState(() {
         _showIOSBanner = true;
