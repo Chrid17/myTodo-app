@@ -19,7 +19,7 @@ class TodoService {
       final List<dynamic> todosList = json.decode(todosJson);
       return todosList.map((json) => Todo.fromJson(json)).toList();
     } catch (e) {
-      print('Error loading todos: $e');
+      // Error loading todos
       return [];
     }
   }
@@ -33,7 +33,7 @@ class TodoService {
       );
       return await prefs.setString(_todosKey, todosJson);
     } catch (e) {
-      print('Error saving todos: $e');
+      // Error saving todos
       return false;
     }
   }

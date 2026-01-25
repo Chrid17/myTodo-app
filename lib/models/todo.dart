@@ -50,12 +50,17 @@ class Todo {
 
   // Create from JSON
   factory Todo.fromJson(Map<String, dynamic> json) {
+    // Parse the date and convert to local time for consistent comparison
+    DateTime parsedDate = DateTime.parse(json['createdAt']);
+    if (parsedDate.isUtc) {
+      parsedDate = parsedDate.toLocal();
+    }
     return Todo(
       id: json['id'],
       title: json['title'],
       description: json['description'] ?? '',
       isCompleted: json['isCompleted'] ?? false,
-      createdAt: DateTime.parse(json['createdAt']),
+      createdAt: parsedDate,
       priority: Priority.values.firstWhere(
         (p) => p.name == json['priority'],
         orElse: () => Priority.medium,
@@ -65,7 +70,10 @@ class Todo {
 
   // Check if todo is overdue
   bool get isOverdue {
-    return !isCompleted && createdAt.isBefore(DateTime.now());
+    final now = DateTime.now();
+    // Ensure both dates are in local time for comparison
+    final dueDate = createdAt.isUtc ? createdAt.toLocal() : createdAt;
+    return !isCompleted && dueDate.isBefore(now);
   }
 
   // Get todo status

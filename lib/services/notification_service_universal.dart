@@ -10,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Universal NotificationService
 /// - Android/iOS: fully functional using flutter_local_notifications
-/// - Other (Windows/Linux/macOS when unsupported): no-op to avoid crashes
+/// - Windows/Linux/macOS: uses local_notifier + in-app callbacks
 class NotificationService {
   static final fln.FlutterLocalNotificationsPlugin _notifications =
       fln.FlutterLocalNotificationsPlugin();
@@ -21,8 +21,10 @@ class NotificationService {
   static bool get _isLinux => Platform.isLinux;
   static bool get _isDesktop => _isWindows || _isMacOS || _isLinux;
 
-  static void Function(String title, String body)? _inAppNotifier; // for Windows
   static final Map<String, Timer> _winTimers = {}; // id -> timer
+  
+  // In-app notification callback for showing alerts when app is open
+  static void Function(String title, String body)? _inAppNotifier;
 
   static Future<void> initialize() async {
     if (_isDesktop) {
@@ -95,25 +97,34 @@ class NotificationService {
   static void _onNotificationTapped(fln.NotificationResponse response) {
     if (!_isMobile) return;
     // Handle notification tap - you can navigate to specific todo or app
-    // ignore: avoid_print
-    print('Notification tapped: ${response.payload}');
+    // Notification tapped: ${response.payload}
   }
 
   static Future<void> scheduleNotification(model.Todo todo) async {
     if (_isDesktop) {
       // schedule native OS toast via local_notifier using a Timer while app runs
       if (!todo.isCompleted) {
-        String title = 'Todo Reminder: ${todo.title}';
+        String title = '⏰ Todo Reminder: ${todo.title}';
         String body = todo.description.isNotEmpty ? todo.description : 'Time to complete your todo!';
         final Duration diff = todo.createdAt.difference(DateTime.now());
         if (!diff.isNegative) {
           _winTimers['${todo.id}_main']?.cancel();
           _winTimers['${todo.id}_main'] = Timer(diff, () async {
+            // Show system notification
             try {
               final notification = LocalNotification(title: title, body: body);
               await notification.show();
             } catch (_) {}
-            try { await SystemSound.play(SystemSoundType.alert); } catch (_) {}
+            
+            // Play system sound
+            try { 
+              await SystemSound.play(SystemSoundType.alert); 
+            } catch (_) {}
+            
+            // Show in-app notification (snackbar/dialog)
+            if (_inAppNotifier != null) {
+              _inAppNotifier!(title, body);
+            }
           });
         }
         if (todo.priority == model.Priority.high) {
@@ -122,11 +133,24 @@ class NotificationService {
           if (!preDiff.isNegative) {
             _winTimers['${todo.id}_pre']?.cancel();
             _winTimers['${todo.id}_pre'] = Timer(preDiff, () async {
+              String preTitle = '⚠️ Due soon: ${todo.title}';
+              String preBody = 'Starting in 5 minutes';
+              
+              // Show system notification
               try {
-                final notification = LocalNotification(title: 'Due soon: ${todo.title}', body: 'Starting in 5 minutes');
+                final notification = LocalNotification(title: preTitle, body: preBody);
                 await notification.show();
               } catch (_) {}
-              try { await SystemSound.play(SystemSoundType.alert); } catch (_) {}
+              
+              // Play system sound
+              try { 
+                await SystemSound.play(SystemSoundType.alert); 
+              } catch (_) {}
+              
+              // Show in-app notification
+              if (_inAppNotifier != null) {
+                _inAppNotifier!(preTitle, preBody);
+              }
             });
           }
         }
@@ -314,7 +338,7 @@ class NotificationService {
     return name;
   }
 
-  // Register a callback for in-app notifications (no longer used on desktop after using local_notifier)
+  // Register a callback for in-app notifications (shows snackbar/dialog when task is due)
   static void registerInAppNotifier(void Function(String title, String body) fn) {
     _inAppNotifier = fn;
   }

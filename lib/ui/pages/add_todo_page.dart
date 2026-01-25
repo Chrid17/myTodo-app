@@ -171,7 +171,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         try {
           await NotificationService.rescheduleNotification(updatedTodo);
         } catch (e) {
-          print('Failed to reschedule notification: $e');
+          // Failed to reschedule notification
         }
       } else {
         // Create new todo
@@ -187,7 +187,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         try {
           await NotificationService.scheduleNotification(newTodo);
         } catch (e) {
-          print('Failed to schedule notification: $e');
+          // Failed to schedule notification
         }
       }
 
@@ -504,7 +504,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
                         borderRadius: BorderRadius.circular(16),
                 ),
                       elevation: 3,
-                      shadowColor: Colors.blue.withOpacity(0.3),
+                      shadowColor: Colors.blue.withValues(alpha: 0.3),
               ),
               child: _isLoading
                   ? const SizedBox(
@@ -562,7 +562,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             spreadRadius: 1,
             blurRadius: 8,
             offset: const Offset(0, 2),

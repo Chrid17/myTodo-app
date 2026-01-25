@@ -2,38 +2,54 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:math' as math;
-import 'dart:html' as html;
+import 'dart:js_interop';
+import 'package:web/web.dart' as web;
 import '../models/todo.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   static final Map<String, Timer> _timers = {};
-  static html.AudioElement? _audio;
+  static web.HTMLAudioElement? _audio;
   static String? _generatedBeepDataUri;
+  
+  // In-app notification callback for showing alerts when app is open
+  static void Function(String title, String body)? _inAppNotifier;
 
   static Future<void> initialize() async {
     // Request Notification permission
     try {
-      if (html.Notification.supported) {
-        if (html.Notification.permission != 'granted') {
-          await html.Notification.requestPermission();
+      if (_notificationSupported) {
+        final permission = web.Notification.permission;
+        if (permission != 'granted') {
+          await web.Notification.requestPermission().toDart;
         }
       }
     } catch (e) {
-      print('Notification permission request failed: $e');
+      // Notification permission request failed
     }
 
     // Preload audio asset (if present in assets)
     try {
       final sound = await _resolveSelectedSound();
       final assetPath = sound == null ? null : 'assets/sounds/$sound.mp3';
-      _audio =
-          assetPath != null
-              ? (html.AudioElement(assetPath)..preload = 'auto')
-              : null;
+      if (assetPath != null) {
+        _audio = web.HTMLAudioElement()
+          ..src = assetPath
+          ..preload = 'auto';
+      } else {
+        _audio = null;
+      }
     } catch (e) {
-      print('Audio preload failed: $e');
+      // Audio preload failed
       _audio = null;
+    }
+  }
+
+  static bool get _notificationSupported {
+    try {
+      return web.Notification.permission.isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -65,14 +81,23 @@ class NotificationService {
         if (preMs > 0) {
           final preId = '${id}_pre';
           _timers[preId] = Timer(Duration(milliseconds: preMs), () {
+            final title = '⚠️ Due soon: ${todo.title}';
+            final body = 'Starting in 5 minutes';
             try {
-              final title = 'Due soon: ${todo.title}';
-              final body = 'Starting in 5 minutes';
-              if (html.Notification.supported &&
-                  html.Notification.permission == 'granted') {
-                html.Notification(title, body: body, tag: preId);
+              if (_notificationSupported &&
+                  web.Notification.permission == 'granted') {
+                final options = web.NotificationOptions(body: body, tag: preId);
+                web.Notification(title, options);
               }
             } catch (_) {}
+            
+            // Play audio
+            _playAudio();
+            
+            // Show in-app notification
+            if (_inAppNotifier != null) {
+              _inAppNotifier!(title, body);
+            }
           });
         }
       }
@@ -80,26 +105,33 @@ class NotificationService {
   }
 
   static void _showNotification(Todo todo) {
-    final title = 'Todo Reminder: ${todo.title}';
+    final title = '⏰ Todo Reminder: ${todo.title}';
     final body =
         todo.description.isNotEmpty
             ? todo.description
             : 'Time to complete your todo!';
 
     try {
-      if (html.Notification.supported &&
-          html.Notification.permission == 'granted') {
+      if (_notificationSupported &&
+          web.Notification.permission == 'granted') {
         // Show browser notification
-        html.Notification(title, body: body, tag: todo.id);
-      } else {
-        // Fallback: log or show an in-app alert
-        print('Notification not permitted or supported.');
+        final options = web.NotificationOptions(body: body, tag: todo.id);
+        web.Notification(title, options);
       }
     } catch (e) {
-      print('Failed to show notification: $e');
+      // Failed to show notification
     }
 
     // Try to play the audio (might be blocked by autoplay policies if user hasn't interacted)
+    _playAudio();
+    
+    // Show in-app notification (dialog/snackbar)
+    if (_inAppNotifier != null) {
+      _inAppNotifier!(title, body);
+    }
+  }
+
+  static void _playAudio() {
     try {
       if (_audio != null) {
         _audio!.currentTime = 0;
@@ -109,10 +141,12 @@ class NotificationService {
 
       // If no asset audio, try generated beep data URI
       _generatedBeepDataUri ??= _generateBeepDataUri();
-      final gen = html.AudioElement(_generatedBeepDataUri!)..preload = 'auto';
+      final gen = web.HTMLAudioElement()
+        ..src = _generatedBeepDataUri!
+        ..preload = 'auto';
       gen.play();
     } catch (e) {
-      print('Audio play failed: $e');
+      // Audio play failed
     }
   }
 
@@ -139,15 +173,18 @@ class NotificationService {
   static Future<void> playTestSound() async {
     try {
       if (_audio != null) {
-        await _audio!.play();
+        _audio!.currentTime = 0;
+        await _audio!.play().toDart;
         return;
       }
 
       _generatedBeepDataUri ??= _generateBeepDataUri();
-      final gen = html.AudioElement(_generatedBeepDataUri!)..preload = 'auto';
-      await gen.play();
+      final gen = web.HTMLAudioElement()
+        ..src = _generatedBeepDataUri!
+        ..preload = 'auto';
+      await gen.play().toDart;
     } catch (e) {
-      print('playTestSound failed: $e');
+      // playTestSound failed
     }
   }
 
@@ -159,12 +196,17 @@ class NotificationService {
           sound == null
               ? 'assets/sounds/notify.mp3'
               : 'assets/sounds/$sound.mp3';
-      final request = await html.HttpRequest.request(path, method: 'GET');
-      return request.status == 200;
+      final response = await web.window.fetch(path.toJS).toDart;
+      return response.ok;
     } catch (e) {
       // Request failed (likely 404 or blocked)
       return false;
     }
+  }
+
+  // Register a callback for in-app notifications (shows dialog when task is due)
+  static void registerInAppNotifier(void Function(String title, String body) fn) {
+    _inAppNotifier = fn;
   }
 
   // Generate a pleasant two-tone chime (no external asset) as a 16-bit PCM WAV data URI.

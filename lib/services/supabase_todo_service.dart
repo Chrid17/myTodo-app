@@ -13,24 +13,31 @@ class SupabaseTodoService {
 
   // Map DB row -> Todo
   Todo _fromRow(Map<String, dynamic> row) {
+    // Parse due_at and convert to local time for consistent comparison
+    DateTime dueAt = DateTime.parse(row['due_at'] as String);
+    if (dueAt.isUtc) {
+      dueAt = dueAt.toLocal();
+    }
     return Todo(
       id: (row['id'] ?? '').toString(),
       title: row['title'] ?? '',
       description: row['description'] ?? '',
       isCompleted: (row['is_completed'] as bool?) ?? false,
-      createdAt: DateTime.parse(row['due_at'] as String),
+      createdAt: dueAt,
       priority: _priorityFromText(row['priority'] as String?),
     );
   }
 
   Map<String, dynamic> _toRow(Todo t, String userId) {
+    // Convert local time to UTC before saving to Supabase
+    final dueAtUtc = t.createdAt.toUtc();
     return {
       'id': t.id, // optional; if null/empty, server will generate
       'user_id': userId,
       'title': t.title,
       'description': t.description,
       'is_completed': t.isCompleted,
-      'due_at': t.createdAt.toIso8601String(),
+      'due_at': dueAtUtc.toIso8601String(),
       'priority': t.priority.name,
     };
   }
@@ -77,6 +84,14 @@ class SupabaseTodoService {
         .asyncMap((todos) async {
           // Mirror to local cache to keep notifications working
           await local_cache.TodoService().saveTodos(todos);
+          
+          // Schedule notifications for upcoming todos
+          for (final todo in todos) {
+            if (!todo.isCompleted && todo.createdAt.isAfter(DateTime.now())) {
+              await NotificationService.scheduleNotification(todo);
+            }
+          }
+          
           return todos;
         });
   }
@@ -116,6 +131,9 @@ class SupabaseTodoService {
     final user = _db.auth.currentUser;
     if (user == null) return false;
 
+    // Convert local time to UTC before saving to Supabase
+    final dueAtUtc = t.createdAt.toUtc();
+    
     await _db
         .from(table)
         .update({
@@ -123,7 +141,7 @@ class SupabaseTodoService {
           'description': t.description,
           'is_completed': t.isCompleted,
           'priority': t.priority.name,
-          'due_at': t.createdAt.toIso8601String(),
+          'due_at': dueAtUtc.toIso8601String(),
         })
         .eq('id', t.id)
         .eq('user_id', user.id);

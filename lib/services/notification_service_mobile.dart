@@ -75,7 +75,7 @@ class NotificationService {
 
   static void _onNotificationTapped(fln.NotificationResponse response) {
     // Handle notification tap - you can navigate to specific todo or app
-    print('Notification tapped: ${response.payload}');
+    // Notification tapped: ${response.payload}
   }
 
   static Future<void> scheduleNotification(model.Todo todo) async {
@@ -221,7 +221,7 @@ class NotificationService {
         notificationDetails,
       );
     } catch (e) {
-      print('playTestSound failed: $e');
+      // playTestSound failed
     }
   }
 
@@ -239,5 +239,11 @@ class NotificationService {
     // On Android, this should match a res/raw/<name> resource (without extension).
     // On iOS, a <name>.wav must be bundled.
     return name;
+  }
+  
+  // Register a callback for in-app notifications (mobile uses OS notifications primarily)
+  static void registerInAppNotifier(void Function(String title, String body) fn) {
+    // On mobile, notifications are handled by the OS via flutter_local_notifications
+    // This callback is kept for API compatibility but is not actively used
   }
 }

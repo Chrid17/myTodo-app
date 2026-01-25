@@ -41,6 +41,7 @@ dependencies:
   timezone: ^0.9.4
   supabase_flutter: ^2.5.11
   local_notifier: ^0.1.6
+  web: ^0.5.1
 
 dev_dependencies:
   flutter_test:

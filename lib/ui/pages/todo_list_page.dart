@@ -38,9 +38,7 @@ class _TodoListPageState extends State<TodoListPage> {
     super.initState();
     NotificationService.registerInAppNotifier((title, body) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$title\n$body')),
-      );
+      _showReminderDialog(title, body);
     });
     // Periodic tick to refresh overdue UI state promptly
     _uiTick = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -48,6 +46,84 @@ class _TodoListPageState extends State<TodoListPage> {
       setState(() {});
     });
     _init();
+  }
+  
+  void _showReminderDialog(String title, String body) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.alarm, color: Color(0xFFEF4444), size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                body,
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Color(0xFFD97706), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This task is now due!',
+                        style: TextStyle(color: Colors.amber.shade800, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Dismiss'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _loadTodos(); // Refresh the list
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C3AED),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('View Tasks'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -710,21 +786,24 @@ class _TodoListPageState extends State<TodoListPage> {
     }
 
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 80, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey.shade600,
-              height: 1.5,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 80, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.grey.shade600,
+                height: 1.5,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
