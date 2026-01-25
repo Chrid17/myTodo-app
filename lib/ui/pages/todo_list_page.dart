@@ -83,6 +83,15 @@ class _TodoListPageState extends State<TodoListPage> {
     }
   }
   
+  void _showInstallGuide() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _InstallGuideSheet(),
+    );
+  }
+  
   void _showReminderDialog(String title, String body) {
     showDialog(
       context: context,
@@ -523,80 +532,89 @@ class _TodoListPageState extends State<TodoListPage> {
                   ],
                 ),
               ),
-            // iOS Safari Banner - Instructions for adding to Home Screen
+            // Notification Setup Banner - Simple and user-friendly
             if (_showIOSBanner && kIsWeb)
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFFF9500), Color(0xFFFF6B00)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
                   ),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.orange.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                      color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.phone_iphone, color: Colors.white, size: 24),
+                          child: const Icon(Icons.notifications_active, color: Colors.white, size: 28),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 14),
                         const Expanded(
-                          child: Text(
-                            'iOS Users: Get Notifications!',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Want Reminders?',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Install the app for notifications',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                          icon: const Icon(Icons.close, color: Colors.white70, size: 22),
                           onPressed: _dismissIOSBanner,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'To receive notifications on iPhone/iPad:',
-                      style: TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 14),
                     Row(
                       children: [
-                        _buildIOSStep('1', 'Tap Share'),
-                        const Icon(Icons.ios_share, color: Colors.white, size: 16),
-                        const SizedBox(width: 8),
-                        _buildIOSStep('2', 'Add to Home Screen'),
-                        const Icon(Icons.add_box_outlined, color: Colors.white, size: 16),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _showInstallGuide,
+                            icon: const Icon(Icons.help_outline, size: 20),
+                            label: const Text('Show Me How', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF7C3AED),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
                       ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Then open from Home Screen & allow notifications',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
                     ),
                   ],
                 ),
@@ -1044,45 +1062,6 @@ class _TodoListPageState extends State<TodoListPage> {
     );
   }
 
-  Widget _buildIOSStep(String number, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 18,
-            height: 18,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.3),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                number,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
     String message;
     IconData icon;
@@ -1476,4 +1455,343 @@ class _TaskCard extends StatelessWidget {
         return const Color(0xFF10B981);
     }
   }
+}
+
+// Install Guide Bottom Sheet - User-friendly setup instructions
+class _InstallGuideSheet extends StatelessWidget {
+  const _InstallGuideSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          // Handle bar
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.install_mobile,
+                    size: 48,
+                    color: Color(0xFF7C3AED),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Install My Tasks App',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Get reminders even when your browser is closed!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Instructions
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  _buildDeviceSection(
+                    'iPhone / iPad',
+                    Icons.phone_iphone,
+                    const Color(0xFF007AFF),
+                    [
+                      _StepItem(
+                        number: '1',
+                        title: 'Tap the Share button',
+                        description: 'Look for the square with an arrow at the bottom of Safari',
+                        icon: Icons.ios_share,
+                      ),
+                      _StepItem(
+                        number: '2',
+                        title: 'Scroll down and tap "Add to Home Screen"',
+                        description: 'You may need to scroll down in the menu to find it',
+                        icon: Icons.add_box_outlined,
+                      ),
+                      _StepItem(
+                        number: '3',
+                        title: 'Tap "Add" in the top right',
+                        description: 'The app icon will appear on your home screen',
+                        icon: Icons.check_circle_outline,
+                      ),
+                      _StepItem(
+                        number: '4',
+                        title: 'Open the app and allow notifications',
+                        description: 'Tap "Allow" when asked to receive reminders',
+                        icon: Icons.notifications_active,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildDeviceSection(
+                    'Android Phone / Tablet',
+                    Icons.android,
+                    const Color(0xFF34A853),
+                    [
+                      _StepItem(
+                        number: '1',
+                        title: 'Tap the menu button',
+                        description: 'Look for 3 dots (⋮) in the top right corner of Chrome',
+                        icon: Icons.more_vert,
+                      ),
+                      _StepItem(
+                        number: '2',
+                        title: 'Tap "Add to Home screen" or "Install app"',
+                        description: 'This will install the app on your phone',
+                        icon: Icons.add_to_home_screen,
+                      ),
+                      _StepItem(
+                        number: '3',
+                        title: 'Open the app and allow notifications',
+                        description: 'Tap "Allow" when asked to receive reminders',
+                        icon: Icons.notifications_active,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildDeviceSection(
+                    'Computer (Windows / Mac)',
+                    Icons.laptop,
+                    const Color(0xFF4285F4),
+                    [
+                      _StepItem(
+                        number: '1',
+                        title: 'Look for the install icon',
+                        description: 'In Chrome/Edge, look for a "+" or computer icon in the address bar',
+                        icon: Icons.install_desktop,
+                      ),
+                      _StepItem(
+                        number: '2',
+                        title: 'Click "Install"',
+                        description: 'The app will open in its own window',
+                        icon: Icons.download,
+                      ),
+                      _StepItem(
+                        number: '3',
+                        title: 'Allow notifications when asked',
+                        description: 'Click "Allow" to receive reminders',
+                        icon: Icons.notifications_active,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                  
+                  // Tip box
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFCD34D)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lightbulb, color: Color(0xFFD97706), size: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Why install?',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF92400E),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Installing the app allows it to send you reminders even when your browser is closed or your phone is locked.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.amber.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ),
+          
+          // Close button
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Got It!',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeviceSection(String title, IconData deviceIcon, Color color, List<_StepItem> steps) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          // Section header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              children: [
+                Icon(deviceIcon, color: color, size: 28),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Steps
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: steps.map((step) => Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7C3AED),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text(
+                          step.number,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  step.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: Color(0xFF1F2937),
+                                  ),
+                                ),
+                              ),
+                              Icon(step.icon, size: 20, color: Colors.grey.shade500),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            step.description,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepItem {
+  final String number;
+  final String title;
+  final String description;
+  final IconData icon;
+
+  const _StepItem({
+    required this.number,
+    required this.title,
+    required this.description,
+    required this.icon,
+  });
 }
