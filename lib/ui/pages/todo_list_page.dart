@@ -61,13 +61,11 @@ class _TodoListPageState extends State<TodoListPage> {
   Future<void> _checkIOSSafari() async {
     if (!kIsWeb) return;
     
-    // Only show banner for iOS users
-    if (!isIOSSafari()) return;
-    
     final preferences = await SharedPreferences.getInstance();
     final dismissed = preferences.getBool('ios_banner_dismissed') ?? false;
     if (dismissed) return;
     
+    // Show banner for all web users - installing the app improves notifications
     if (mounted) {
       setState(() {
         _showIOSBanner = true;
