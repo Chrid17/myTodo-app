@@ -323,12 +323,6 @@ class _TodoListPageState extends State<TodoListPage> {
     });
   }
 
-  void _deselectAll() {
-    setState(() {
-      _selectedTodoIds.clear();
-    });
-  }
-
   Future<void> _deleteSelected() async {
     if (_selectedTodoIds.isEmpty) return;
     
