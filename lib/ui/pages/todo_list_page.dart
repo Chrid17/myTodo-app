@@ -62,7 +62,8 @@ class _TodoListPageState extends State<TodoListPage> {
     if (!kIsWeb) return;
     
     final preferences = await SharedPreferences.getInstance();
-    final dismissed = preferences.getBool('ios_banner_dismissed') ?? false;
+    // Use a new key so banner shows for everyone again
+    final dismissed = preferences.getBool('install_banner_dismissed_v2') ?? false;
     if (dismissed) return;
     
     // Show banner for all web users - installing the app improves notifications
@@ -75,7 +76,7 @@ class _TodoListPageState extends State<TodoListPage> {
   
   Future<void> _dismissIOSBanner() async {
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool('ios_banner_dismissed', true);
+    await preferences.setBool('install_banner_dismissed_v2', true);
     if (mounted) {
       setState(() {
         _showIOSBanner = false;

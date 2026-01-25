@@ -17,16 +17,7 @@ class NotificationService {
 
   static Future<void> initialize() async {
     // Request Notification permission
-    try {
-      if (_notificationSupported) {
-        final permission = web.Notification.permission;
-        if (permission != 'granted') {
-          await web.Notification.requestPermission().toDart;
-        }
-      }
-    } catch (e) {
-      // Notification permission request failed
-    }
+    await requestPermission();
 
     // Preload audio asset (if present in assets)
     try {
@@ -42,6 +33,31 @@ class NotificationService {
     } catch (e) {
       // Audio preload failed
       _audio = null;
+    }
+  }
+  
+  // Request notification permission
+  static Future<bool> requestPermission() async {
+    try {
+      if (!_notificationSupported) return false;
+      
+      final permission = web.Notification.permission;
+      if (permission == 'granted') return true;
+      if (permission == 'denied') return false;
+      
+      final result = await web.Notification.requestPermission().toDart;
+      return result == 'granted';
+    } catch (e) {
+      return false;
+    }
+  }
+  
+  // Check if notifications are enabled
+  static bool get isPermissionGranted {
+    try {
+      return _notificationSupported && web.Notification.permission == 'granted';
+    } catch (_) {
+      return false;
     }
   }
 
@@ -111,16 +127,8 @@ class NotificationService {
             ? todo.description
             : 'Time to complete your todo!';
 
-    try {
-      if (_notificationSupported &&
-          web.Notification.permission == 'granted') {
-        // Show browser notification
-        final options = web.NotificationOptions(body: body, tag: todo.id);
-        web.Notification(title, options);
-      }
-    } catch (e) {
-      // Failed to show notification
-    }
+    // Show browser notification
+    showBrowserNotification(title, body, todo.id);
 
     // Try to play the audio (might be blocked by autoplay policies if user hasn't interacted)
     _playAudio();
@@ -128,6 +136,46 @@ class NotificationService {
     // Show in-app notification (dialog/snackbar)
     if (_inAppNotifier != null) {
       _inAppNotifier!(title, body);
+    }
+  }
+  
+  // Show a browser notification directly
+  static void showBrowserNotification(String title, String body, [String? tag]) {
+    try {
+      if (_notificationSupported && web.Notification.permission == 'granted') {
+        final options = web.NotificationOptions(
+          body: body, 
+          tag: tag ?? 'todo-notification-${DateTime.now().millisecondsSinceEpoch}',
+          icon: 'icons/Icon-192.png',
+          requireInteraction: true,
+        );
+        web.Notification(title, options);
+      }
+    } catch (e) {
+      // Failed to show notification
+    }
+  }
+  
+  // Show a test notification to verify everything works
+  static Future<bool> showTestNotification() async {
+    try {
+      // First request permission if not granted
+      final hasPermission = await requestPermission();
+      if (!hasPermission) return false;
+      
+      // Show test notification
+      showBrowserNotification(
+        '✅ Notifications Enabled!',
+        'You will receive reminders when your tasks are due.',
+        'test-notification',
+      );
+      
+      // Play sound
+      _playAudio();
+      
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
