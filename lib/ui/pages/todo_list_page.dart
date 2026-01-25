@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:async';
 import '../../models/todo.dart';
 import '../../services/supabase_todo_service.dart';
 import '../../services/notification_service.dart';
-import '../../services/share_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
@@ -92,7 +90,7 @@ class _TodoListPageState extends State<TodoListPage> {
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) {
+        builder: (dialogContext) {
           return AlertDialog(
             title: const Text('Enable notifications & sound'),
             content: const SingleChildScrollView(
@@ -109,7 +107,9 @@ class _TodoListPageState extends State<TodoListPage> {
                 child: const Text('Maybe later'),
                 onPressed: () async {
                   await prefs.setBool('notifications_prompt_shown', true);
-                  Navigator.of(context).pop();
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
                 },
               ),
               TextButton(
@@ -122,7 +122,9 @@ class _TodoListPageState extends State<TodoListPage> {
                   }
                   await prefs.setBool('notifications_prompt_shown', true);
                   await prefs.setBool('notifications_primed', true);
-                  Navigator.of(context).pop();
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
                 },
               ),
             ],
@@ -130,7 +132,7 @@ class _TodoListPageState extends State<TodoListPage> {
         },
       );
     } catch (e) {
-      print('Error showing notification prompt: $e');
+      // Error showing notification prompt
     }
   }
 
@@ -225,6 +227,8 @@ class _TodoListPageState extends State<TodoListPage> {
 
   Future<void> _selectDueDate() async {
     if (_isReadOnly) return;
+    if (!mounted) return;
+    
     final date = await showDatePicker(
       context: context,
       initialDate: _selectedDueDate ?? DateTime.now(),
@@ -242,7 +246,7 @@ class _TodoListPageState extends State<TodoListPage> {
       },
     );
 
-    if (date != null) {
+    if (date != null && mounted) {
       final time = await showTimePicker(
         context: context,
         initialTime: TimeOfDay.fromDateTime(_selectedDueDate ?? DateTime.now()),
@@ -258,7 +262,7 @@ class _TodoListPageState extends State<TodoListPage> {
         },
       );
 
-      if (time != null) {
+      if (time != null && mounted) {
         setState(() {
           _selectedDueDate = DateTime(
             date.year,
@@ -276,25 +280,6 @@ class _TodoListPageState extends State<TodoListPage> {
   int get _activeCount => _todos.where((todo) => !todo.isCompleted).length;
   int get _completedCount => _todos.where((todo) => todo.isCompleted).length;
   int get _highPriorityCount => _todos.where((todo) => todo.priority == Priority.high && !todo.isCompleted).length;
-
-  Future<void> _shareCurrentTodos() async {
-    try {
-      final base = Uri.base;
-      final url = ShareUtils.buildShareUrl(base, _todos);
-      await Clipboard.setData(ClipboardData(text: url));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Share link copied to clipboard')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create share link: $e')),
-        );
-      }
-    }
-  }
 
   Future<void> _onSavePressed() async {
     await _loadTodos();
@@ -449,7 +434,7 @@ class _TodoListPageState extends State<TodoListPage> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -770,7 +755,7 @@ class _StatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -870,8 +855,8 @@ class _TaskCard extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: isOverdue 
-                ? const Color(0xFFEF4444).withOpacity(0.1) 
-                : Colors.black.withOpacity(0.03),
+                ? const Color(0xFFEF4444).withValues(alpha: 0.1) 
+                : Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -965,7 +950,7 @@ class _TaskCard extends StatelessWidget {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: _getPriorityColor(todo.priority).withOpacity(0.1),
+                                    color: _getPriorityColor(todo.priority).withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
