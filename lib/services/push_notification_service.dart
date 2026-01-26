@@ -10,22 +10,30 @@ class PushNotificationService {
   /// Schedule a push notification for a todo
   /// This stores the notification in Supabase so a backend function can send it
   static Future<void> scheduleNotification(Todo todo) async {
-    if (todo.isCompleted || !todo.createdAt.isAfter(DateTime.now())) {
+    debugPrint('PushNotificationService: Attempting to schedule for ${todo.title}');
+    debugPrint('PushNotificationService: Due at ${todo.createdAt}, isCompleted: ${todo.isCompleted}');
+    debugPrint('PushNotificationService: Is future? ${todo.createdAt.isAfter(DateTime.now())}');
+    
+    // Schedule if the todo is not completed (regardless of time - we'll schedule anyway)
+    if (todo.isCompleted) {
+      debugPrint('PushNotificationService: Skipping - todo is completed');
       return;
     }
     
     try {
       final db = AppSupabase.client;
       final user = db.auth.currentUser;
+      debugPrint('PushNotificationService: User ID: ${user?.id}');
       
       // Delete any existing scheduled notification for this todo
       await db
           .from(_table)
           .delete()
           .eq('todo_id', todo.id);
+      debugPrint('PushNotificationService: Deleted old notifications');
       
       // Insert new scheduled notification
-      await db.from(_table).insert({
+      final insertData = {
         'todo_id': todo.id,
         'user_id': user?.id,
         'title': '⏰ Todo Reminder: ${todo.title}',
@@ -33,7 +41,11 @@ class PushNotificationService {
             ? todo.description 
             : 'Time to complete your todo!',
         'scheduled_at': todo.createdAt.toUtc().toIso8601String(),
-      });
+      };
+      debugPrint('PushNotificationService: Inserting: $insertData');
+      
+      await db.from(_table).insert(insertData);
+      debugPrint('PushNotificationService: SUCCESS - notification scheduled for: ${todo.title}');
       
       // For high priority, also schedule a 5-minute reminder
       if (todo.priority == Priority.high) {
@@ -46,12 +58,12 @@ class PushNotificationService {
             'body': 'Starting in 5 minutes',
             'scheduled_at': preTime.toUtc().toIso8601String(),
           });
+          debugPrint('PushNotificationService: Pre-notification also scheduled');
         }
       }
-      
-      debugPrint('Push notification scheduled for: ${todo.title}');
-    } catch (e) {
-      debugPrint('Failed to schedule push notification: $e');
+    } catch (e, stackTrace) {
+      debugPrint('PushNotificationService: FAILED to schedule: $e');
+      debugPrint('PushNotificationService: Stack: $stackTrace');
     }
   }
   
