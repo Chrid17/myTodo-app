@@ -41,21 +41,26 @@ class NotificationService {
     try {
       if (!_notificationSupported) return false;
       
-      final permission = web.Notification.permission;
+      final permission = _getPermissionString();
       if (permission == 'granted') return true;
       if (permission == 'denied') return false;
       
       final result = await web.Notification.requestPermission().toDart;
-      return result == 'granted';
+      return result.toString() == 'granted';
     } catch (e) {
       return false;
     }
   }
   
+  // Helper to get permission as a Dart string
+  static String _getPermissionString() {
+    return web.Notification.permission.toString();
+  }
+  
   // Check if notifications are enabled
   static bool get isPermissionGranted {
     try {
-      return _notificationSupported && web.Notification.permission == 'granted';
+      return _notificationSupported && _getPermissionString() == 'granted';
     } catch (_) {
       return false;
     }
@@ -63,7 +68,7 @@ class NotificationService {
 
   static bool get _notificationSupported {
     try {
-      return web.Notification.permission.isNotEmpty;
+      return _getPermissionString().isNotEmpty;
     } catch (_) {
       return false;
     }
@@ -101,7 +106,7 @@ class NotificationService {
             final body = 'Starting in 5 minutes';
             try {
               if (_notificationSupported &&
-                  web.Notification.permission == 'granted') {
+                  _getPermissionString() == 'granted') {
                 final options = web.NotificationOptions(body: body, tag: preId);
                 web.Notification(title, options);
               }
@@ -142,7 +147,7 @@ class NotificationService {
   // Show a browser notification directly
   static void showBrowserNotification(String title, String body, [String? tag]) {
     try {
-      if (_notificationSupported && web.Notification.permission == 'granted') {
+      if (_notificationSupported && _getPermissionString() == 'granted') {
         final options = web.NotificationOptions(
           body: body, 
           tag: tag ?? 'todo-notification-${DateTime.now().millisecondsSinceEpoch}',
@@ -346,8 +351,8 @@ class NotificationService {
   // Resolve selected sound from SharedPreferences, same key as mobile.
   static Future<String?> _resolveSelectedSound() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final name = prefs.getString('selected_sound');
+      final preferences = await SharedPreferences.getInstance();
+      final name = preferences.getString('selected_sound');
       if (name == null || name == 'default') return null;
       return name;
     } catch (_) {

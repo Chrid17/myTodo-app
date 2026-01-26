@@ -4,7 +4,6 @@ import 'dart:async';
 import '../../models/todo.dart';
 import '../../services/supabase_todo_service.dart';
 import '../../services/notification_service.dart';
-import '../../services/platform_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
