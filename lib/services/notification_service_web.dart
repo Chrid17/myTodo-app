@@ -288,7 +288,7 @@ class NotificationService {
     bytes.setUint8(13, 'm'.codeUnitAt(0));
     bytes.setUint8(14, 't'.codeUnitAt(0));
     bytes.setUint8(15, ' '.codeUnitAt(0));
-    bytes.setUint32(16, 16, Endian.little); // subchunk1 size
+    bytes.setUint32(16, 16, Endian.little);
     bytes.setUint16(20, 1, Endian.little); // PCM
     bytes.setUint16(22, 1, Endian.little); // mono
     bytes.setUint32(24, sampleRate, Endian.little);
