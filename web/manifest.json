@@ -1,6 +1,7 @@
 {
     "name": "My Tasks - Todo App",
     "short_name": "My Tasks",
+    "id": "/",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F5F3FF",
