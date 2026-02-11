@@ -1,10 +1,13 @@
 {
-    "cSpell.words": [
-        "Cupertino",
-        "Homescreen",
-        "OWER",
-        "Schyler"
-    ],
-    "codium.codeCompletion.enable": false,
-    "java.configuration.updateBuildConfiguration": "interactive"
+  "cSpell.words": [
+    "Cupertino",
+    "firebasestorage",
+    "flutterfire",
+    "Homescreen",
+    "mytodo",
+    "OWER",
+    "Schyler"
+  ],
+  "codium.codeCompletion.enable": false,
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

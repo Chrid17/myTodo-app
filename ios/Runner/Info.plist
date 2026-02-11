@@ -45,5 +45,14 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Background modes for push notifications and background fetch -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
+	<!-- Allow time-sensitive notifications (iOS 15+) -->
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>We need notification permission to remind you about your tasks.</string>
 </dict>
 </plist>
