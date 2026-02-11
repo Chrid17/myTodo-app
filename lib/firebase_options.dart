@@ -39,7 +39,7 @@ class DefaultFirebaseOptions {
     storageBucket: 'mytodo-app-ce7c2.firebasestorage.app',
   );
 
-  // TODO: Add your iOS app to Firebase Console, then run flutterfire configure again
+  // Note: Add your iOS app to Firebase Console, then run flutterfire configure
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDuI5aGi9RlNYlyB1-aMuBXuGsX5kCIAQc',
     appId: '1:559869313503:android:e5701144e0f70db5a9446a',
@@ -49,7 +49,7 @@ class DefaultFirebaseOptions {
     iosBundleId: 'com.example.myProject',
   );
 
-  // TODO: Add your web app to Firebase Console, then run flutterfire configure again
+  // Note: Add your web app to Firebase Console, then run flutterfire configure
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyDuI5aGi9RlNYlyB1-aMuBXuGsX5kCIAQc',
     appId: '1:559869313503:android:e5701144e0f70db5a9446a',
