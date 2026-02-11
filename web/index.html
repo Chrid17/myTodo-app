@@ -40,6 +40,18 @@
     window.SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB1amZhcGxkbGNsdnlrampwaGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2MDMyNzIsImV4cCI6MjA3NzE3OTI3Mn0.OT1S6YpoMT5q_fzuDx21BX0FoRZi8xURK-MBugeuSEU';
   </script>
   <script type="module">
+    // Cleanup old Flutter service workers that might block push notifications
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for(let registration of registrations) {
+          if (registration.active && registration.active.scriptURL.includes("flutter_service_worker.js")) {
+            console.log("Unregistering old Flutter SW:", registration);
+            registration.unregister();
+          }
+        }
+      });
+    }
+
     console.log('[Push Init] Starting push notification setup...');
     
     import { registerAndSubscribePush, isPushSupported } from './push.js';
