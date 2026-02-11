@@ -1,16 +1,22 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'
     as fln;
+import 'package:flutter/foundation.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../models/todo.dart' as model;
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Notification service optimised for mobile platforms (Android & iOS).
+///
+/// Uses [flutter_local_notifications] with `zonedSchedule` and
+/// `exactAllowWhileIdle` so that reminders fire even when the app is
+/// killed or the device is in Doze mode.
 class NotificationService {
   static final fln.FlutterLocalNotificationsPlugin _notifications =
       fln.FlutterLocalNotificationsPlugin();
 
   static Future<void> initialize() async {
-    // Initialize timezone data
+    // Initialize timezone data (required for zonedSchedule)
     tz.initializeTimeZones();
 
     // Android initialization settings
@@ -57,25 +63,39 @@ class NotificationService {
 
     // Request permissions
     await _requestPermissions();
+
+    debugPrint('NotificationService (mobile): Initialization complete');
   }
 
   static Future<void> _requestPermissions() async {
-    await _notifications
+    // Android 13+ (API 33) runtime notification permission
+    final androidGranted = await _notifications
         .resolvePlatformSpecificImplementation<
           fln.AndroidFlutterLocalNotificationsPlugin
         >()
         ?.requestNotificationsPermission();
+    debugPrint('NotificationService: Android permission granted: $androidGranted');
 
-    await _notifications
+    // Android 12+ (API 31) exact alarm permission – critical for scheduled
+    // notifications to fire when the app is closed
+    final exactAlarmGranted = await _notifications
+        .resolvePlatformSpecificImplementation<
+          fln.AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestExactAlarmsPermission();
+    debugPrint('NotificationService: Exact alarm permission: $exactAlarmGranted');
+
+    // iOS permissions
+    final iosGranted = await _notifications
         .resolvePlatformSpecificImplementation<
           fln.IOSFlutterLocalNotificationsPlugin
         >()
         ?.requestPermissions(alert: true, badge: true, sound: true);
+    debugPrint('NotificationService: iOS permission granted: $iosGranted');
   }
 
   static void _onNotificationTapped(fln.NotificationResponse response) {
-    // Handle notification tap - you can navigate to specific todo or app
-    // Notification tapped: ${response.payload}
+    debugPrint('NotificationService: Notification tapped: ${response.payload}');
   }
 
   static Future<void> scheduleNotification(model.Todo todo) async {
@@ -130,40 +150,49 @@ class NotificationService {
       final fln.NotificationDetails notificationDetails =
           fln.NotificationDetails(android: androidDetails, iOS: iosDetails);
 
-      // Schedule the main due-time notification
-      await _notifications.zonedSchedule(
-        mainNotificationId,
-        'Todo Reminder: ${todo.title}',
-        todo.description.isNotEmpty
-            ? todo.description
-            : 'Time to complete your todo!',
-        tz.TZDateTime.from(todo.createdAt, tz.local),
-        notificationDetails,
-        payload: todo.id,
-        androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            fln.UILocalNotificationDateInterpretation.absoluteTime,
-      );
-
-      // For high priority, also schedule a 5-minute prior reminder if in the future
-      if (todo.priority == model.Priority.high) {
-        final DateTime preTime = todo.createdAt.subtract(
-          const Duration(minutes: 5),
+      try {
+        // Schedule the main due-time notification
+        await _notifications.zonedSchedule(
+          mainNotificationId,
+          'Todo Reminder: ${todo.title}',
+          todo.description.isNotEmpty
+              ? todo.description
+              : 'Time to complete your todo!',
+          tz.TZDateTime.from(todo.createdAt, tz.local),
+          notificationDetails,
+          payload: todo.id,
+          androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              fln.UILocalNotificationDateInterpretation.absoluteTime,
         );
-        if (preTime.isAfter(DateTime.now())) {
-          final int preNotificationId = '${todo.id}_pre'.hashCode;
-          await _notifications.zonedSchedule(
-            preNotificationId,
-            'Due soon: ${todo.title}',
-            'Starting in 5 minutes',
-            tz.TZDateTime.from(preTime, tz.local),
-            notificationDetails,
-            payload: todo.id,
-            androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
-            uiLocalNotificationDateInterpretation:
-                fln.UILocalNotificationDateInterpretation.absoluteTime,
+        debugPrint(
+            'NotificationService: Scheduled notification for "${todo.title}" at ${todo.createdAt}');
+
+        // For high priority, also schedule a 5-minute prior reminder if in the future
+        if (todo.priority == model.Priority.high) {
+          final DateTime preTime = todo.createdAt.subtract(
+            const Duration(minutes: 5),
           );
+          if (preTime.isAfter(DateTime.now())) {
+            final int preNotificationId = '${todo.id}_pre'.hashCode;
+            await _notifications.zonedSchedule(
+              preNotificationId,
+              '⚠️ Due soon: ${todo.title}',
+              'Starting in 5 minutes',
+              tz.TZDateTime.from(preTime, tz.local),
+              notificationDetails,
+              payload: todo.id,
+              androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
+              uiLocalNotificationDateInterpretation:
+                  fln.UILocalNotificationDateInterpretation.absoluteTime,
+            );
+            debugPrint(
+                'NotificationService: Scheduled 5-min pre-reminder for "${todo.title}"');
+          }
         }
+      } catch (e, stack) {
+        debugPrint('NotificationService: Failed to schedule: $e');
+        debugPrint('NotificationService: Stack: $stack');
       }
     }
   }
@@ -221,7 +250,7 @@ class NotificationService {
         notificationDetails,
       );
     } catch (e) {
-      // playTestSound failed
+      debugPrint('NotificationService: playTestSound failed: $e');
     }
   }
 
@@ -245,5 +274,18 @@ class NotificationService {
   static void registerInAppNotifier(void Function(String title, String body) fn) {
     // On mobile, notifications are handled by the OS via flutter_local_notifications
     // This callback is kept for API compatibility but is not actively used
+  }
+
+  /// Get the count of pending scheduled notifications.
+  static Future<int> getPendingNotificationCount() async {
+    try {
+      final pending = await _notifications.pendingNotificationRequests();
+      debugPrint(
+          'NotificationService: ${pending.length} pending notifications');
+      return pending.length;
+    } catch (e) {
+      debugPrint('NotificationService: Failed to get pending count: $e');
+      return 0;
+    }
   }
 }

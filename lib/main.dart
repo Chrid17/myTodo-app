@@ -59,21 +59,29 @@ void main() async {
 
   // 5. Restore scheduled local notifications from local cache
   final localTodos = await TodoService().getTodos();
+  int scheduledCount = 0;
   for (final t in localTodos) {
     if (!t.isCompleted && t.createdAt.isAfter(DateTime.now())) {
       await NotificationService.scheduleNotification(t);
+      scheduledCount++;
     }
   }
+  debugPrint('Startup: Scheduled $scheduledCount notifications from local cache');
 
   // 6. Also schedule upcoming tasks from Supabase on launch
   try {
     final remoteTodos = await SupabaseTodoService().getTodos();
+    int remoteScheduled = 0;
     for (final t in remoteTodos) {
       if (!t.isCompleted && t.createdAt.isAfter(DateTime.now())) {
         await NotificationService.scheduleNotification(t);
+        remoteScheduled++;
       }
     }
-  } catch (_) {}
+    debugPrint('Startup: Scheduled $remoteScheduled notifications from Supabase');
+  } catch (e) {
+    debugPrint('Startup: Failed to load Supabase todos: $e');
+  }
 
   // 7. Parse shared data from URL on web
   List<Todo>? sharedTodos;

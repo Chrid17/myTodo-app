@@ -1,15 +1,21 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart' as fln;
-import 'package:local_notifier/local_notifier.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../models/todo.dart' as model;
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Import local_notifier for desktop platforms only.
+// On mobile this import resolves but native symbols are never invoked
+// because every call site is gated behind _isDesktop.
+import 'package:local_notifier/local_notifier.dart';
+
 /// Universal NotificationService
 /// - Android/iOS: fully functional using flutter_local_notifications
+///   with zonedSchedule (works even when app is closed/killed)
 /// - Windows/Linux/macOS: uses local_notifier + in-app callbacks
 class NotificationService {
   static final fln.FlutterLocalNotificationsPlugin _notifications =
@@ -22,23 +28,25 @@ class NotificationService {
   static bool get _isDesktop => _isWindows || _isMacOS || _isLinux;
 
   static final Map<String, Timer> _winTimers = {}; // id -> timer
-  
+
   // In-app notification callback for showing alerts when app is open
   static void Function(String title, String body)? _inAppNotifier;
 
   static Future<void> initialize() async {
     if (_isDesktop) {
-      // Older versions of local_notifier don't require explicit initialization
-      // and may not expose LocalNotifier.initialize.
-      // Proceed without init and show notifications directly.
+      // Desktop: local_notifier does not require explicit initialization
+      // on most versions. Proceed and show notifications directly.
       return;
     }
+
     if (!_isMobile) {
       // No-op for unsupported platforms
       return;
     }
 
-    // Initialize timezone data
+    // ── Mobile (Android / iOS) ──────────────────────────────────────────
+
+    // Initialize timezone data (required for zonedSchedule)
     tz.initializeTimeZones();
 
     // Android initialization settings
@@ -46,7 +54,8 @@ class NotificationService {
         fln.AndroidInitializationSettings('@mipmap/ic_launcher');
 
     // iOS initialization settings
-    const fln.DarwinInitializationSettings iosSettings = fln.DarwinInitializationSettings(
+    const fln.DarwinInitializationSettings iosSettings =
+        fln.DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
@@ -66,9 +75,11 @@ class NotificationService {
 
     // Create Android notification channel so sound and importance work on Android 8+
     final androidPlugin = _notifications
-        .resolvePlatformSpecificImplementation<fln.AndroidFlutterLocalNotificationsPlugin>();
+        .resolvePlatformSpecificImplementation<
+            fln.AndroidFlutterLocalNotificationsPlugin>();
 
-    const fln.AndroidNotificationChannel channel = fln.AndroidNotificationChannel(
+    const fln.AndroidNotificationChannel channel =
+        fln.AndroidNotificationChannel(
       'todo_reminders', // id
       'Todo Reminders', // title
       description: 'Notifications for todo reminders',
@@ -78,89 +89,55 @@ class NotificationService {
 
     await androidPlugin?.createNotificationChannel(channel);
 
-    // Request permissions
+    // Request permissions on both Android and iOS
     await _requestPermissions();
+
+    debugPrint('NotificationService: Mobile initialization complete');
   }
 
   static Future<void> _requestPermissions() async {
     if (!_isMobile) return;
 
-    await _notifications
-        .resolvePlatformSpecificImplementation<fln.AndroidFlutterLocalNotificationsPlugin>()
+    // Android 13+ (API 33) requires runtime notification permission
+    final androidGranted = await _notifications
+        .resolvePlatformSpecificImplementation<
+            fln.AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
+    debugPrint('NotificationService: Android permission granted: $androidGranted');
 
-    await _notifications
-        .resolvePlatformSpecificImplementation<fln.IOSFlutterLocalNotificationsPlugin>()
+    // Request exact alarm permission on Android 12+ (API 31)
+    // This is critical for scheduled notifications to fire when app is closed
+    final exactAlarmGranted = await _notifications
+        .resolvePlatformSpecificImplementation<
+            fln.AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestExactAlarmsPermission();
+    debugPrint('NotificationService: Exact alarm permission: $exactAlarmGranted');
+
+    // iOS permissions
+    final iosGranted = await _notifications
+        .resolvePlatformSpecificImplementation<
+            fln.IOSFlutterLocalNotificationsPlugin>()
         ?.requestPermissions(alert: true, badge: true, sound: true);
+    debugPrint('NotificationService: iOS permission granted: $iosGranted');
   }
 
   static void _onNotificationTapped(fln.NotificationResponse response) {
-    if (!_isMobile) return;
+    debugPrint('NotificationService: Notification tapped: ${response.payload}');
     // Handle notification tap - you can navigate to specific todo or app
-    // Notification tapped: ${response.payload}
   }
 
   static Future<void> scheduleNotification(model.Todo todo) async {
+    // ── Desktop path ──────────────────────────────────────────────────
     if (_isDesktop) {
-      // schedule native OS toast via local_notifier using a Timer while app runs
-      if (!todo.isCompleted) {
-        String title = '⏰ Todo Reminder: ${todo.title}';
-        String body = todo.description.isNotEmpty ? todo.description : 'Time to complete your todo!';
-        final Duration diff = todo.createdAt.difference(DateTime.now());
-        if (!diff.isNegative) {
-          _winTimers['${todo.id}_main']?.cancel();
-          _winTimers['${todo.id}_main'] = Timer(diff, () async {
-            // Show system notification
-            try {
-              final notification = LocalNotification(title: title, body: body);
-              await notification.show();
-            } catch (_) {}
-            
-            // Play system sound
-            try { 
-              await SystemSound.play(SystemSoundType.alert); 
-            } catch (_) {}
-            
-            // Show in-app notification (snackbar/dialog)
-            if (_inAppNotifier != null) {
-              _inAppNotifier!(title, body);
-            }
-          });
-        }
-        if (todo.priority == model.Priority.high) {
-          final DateTime preTime = todo.createdAt.subtract(const Duration(minutes: 5));
-          final Duration preDiff = preTime.difference(DateTime.now());
-          if (!preDiff.isNegative) {
-            _winTimers['${todo.id}_pre']?.cancel();
-            _winTimers['${todo.id}_pre'] = Timer(preDiff, () async {
-              String preTitle = '⚠️ Due soon: ${todo.title}';
-              String preBody = 'Starting in 5 minutes';
-              
-              // Show system notification
-              try {
-                final notification = LocalNotification(title: preTitle, body: preBody);
-                await notification.show();
-              } catch (_) {}
-              
-              // Play system sound
-              try { 
-                await SystemSound.play(SystemSoundType.alert); 
-              } catch (_) {}
-              
-              // Show in-app notification
-              if (_inAppNotifier != null) {
-                _inAppNotifier!(preTitle, preBody);
-              }
-            });
-          }
-        }
-      }
+      _scheduleDesktopNotification(todo);
       return;
     }
 
     if (!_isMobile) return;
+
+    // ── Mobile path (Android / iOS) ───────────────────────────────────
     // Only schedule if the todo is in the future and not completed
-    if (todo.createdAt.isAfter(DateTime.now()) && !todo.isCompleted) {
+    if (!todo.isCompleted && todo.createdAt.isAfter(DateTime.now())) {
       final int mainNotificationId = todo.id.hashCode;
 
       // Map Todo priority to platform-specific urgency
@@ -178,7 +155,8 @@ class NotificationService {
       // Resolve user-selected sound name (null means use system default)
       final String? selectedSound = await _resolveSelectedSound();
 
-      final fln.DarwinNotificationDetails iosDetails = fln.DarwinNotificationDetails(
+      final fln.DarwinNotificationDetails iosDetails =
+          fln.DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
@@ -191,7 +169,8 @@ class NotificationService {
         },
       );
 
-      final fln.AndroidNotificationDetails androidDetails = fln.AndroidNotificationDetails(
+      final fln.AndroidNotificationDetails androidDetails =
+          fln.AndroidNotificationDetails(
         'todo_reminders',
         'Todo Reminders',
         channelDescription: 'Notifications for todo reminders',
@@ -207,33 +186,108 @@ class NotificationService {
       final fln.NotificationDetails notificationDetails =
           fln.NotificationDetails(android: androidDetails, iOS: iosDetails);
 
-      // Schedule the main due-time notification
-      await _notifications.zonedSchedule(
-        mainNotificationId,
-        'Todo Reminder: ${todo.title}',
-        todo.description.isNotEmpty ? todo.description : 'Time to complete your todo!',
-        tz.TZDateTime.from(todo.createdAt, tz.local),
-        notificationDetails,
-        payload: todo.id,
-        androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation: fln.UILocalNotificationDateInterpretation.absoluteTime,
-      );
+      try {
+        // Schedule the main due-time notification
+        // androidScheduleMode.exactAllowWhileIdle ensures the alarm fires
+        // even in Doze mode / when the app is force-stopped
+        await _notifications.zonedSchedule(
+          mainNotificationId,
+          'Todo Reminder: ${todo.title}',
+          todo.description.isNotEmpty
+              ? todo.description
+              : 'Time to complete your todo!',
+          tz.TZDateTime.from(todo.createdAt, tz.local),
+          notificationDetails,
+          payload: todo.id,
+          androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              fln.UILocalNotificationDateInterpretation.absoluteTime,
+        );
+        debugPrint(
+            'NotificationService: Scheduled notification for "${todo.title}" at ${todo.createdAt}');
 
-      // For high priority, also schedule a 5-minute prior reminder if in the future
+        // For high priority, also schedule a 5-minute prior reminder
+        if (todo.priority == model.Priority.high) {
+          final DateTime preTime =
+              todo.createdAt.subtract(const Duration(minutes: 5));
+          if (preTime.isAfter(DateTime.now())) {
+            final int preNotificationId = '${todo.id}_pre'.hashCode;
+            await _notifications.zonedSchedule(
+              preNotificationId,
+              '⚠️ Due soon: ${todo.title}',
+              'Starting in 5 minutes',
+              tz.TZDateTime.from(preTime, tz.local),
+              notificationDetails,
+              payload: todo.id,
+              androidScheduleMode:
+                  fln.AndroidScheduleMode.exactAllowWhileIdle,
+              uiLocalNotificationDateInterpretation:
+                  fln.UILocalNotificationDateInterpretation.absoluteTime,
+            );
+            debugPrint(
+                'NotificationService: Scheduled 5-min pre-reminder for "${todo.title}"');
+          }
+        }
+      } catch (e, stack) {
+        debugPrint('NotificationService: Failed to schedule: $e');
+        debugPrint('NotificationService: Stack: $stack');
+      }
+    }
+  }
+
+  // ── Desktop notification scheduling via local_notifier + Timer ─────────
+  static void _scheduleDesktopNotification(model.Todo todo) {
+    if (!todo.isCompleted) {
+      String title = '⏰ Todo Reminder: ${todo.title}';
+      String body = todo.description.isNotEmpty
+          ? todo.description
+          : 'Time to complete your todo!';
+      final Duration diff = todo.createdAt.difference(DateTime.now());
+      if (!diff.isNegative) {
+        _winTimers['${todo.id}_main']?.cancel();
+        _winTimers['${todo.id}_main'] = Timer(diff, () async {
+          // Show system notification
+          try {
+            final notification =
+                LocalNotification(title: title, body: body);
+            await notification.show();
+          } catch (_) {}
+
+          // Play system sound
+          try {
+            await SystemSound.play(SystemSoundType.alert);
+          } catch (_) {}
+
+          // Show in-app notification (snackbar/dialog)
+          if (_inAppNotifier != null) {
+            _inAppNotifier!(title, body);
+          }
+        });
+      }
       if (todo.priority == model.Priority.high) {
-        final DateTime preTime = todo.createdAt.subtract(const Duration(minutes: 5));
-        if (preTime.isAfter(DateTime.now())) {
-          final int preNotificationId = '${todo.id}_pre'.hashCode;
-          await _notifications.zonedSchedule(
-            preNotificationId,
-            'Due soon: ${todo.title}',
-            'Starting in 5 minutes',
-            tz.TZDateTime.from(preTime, tz.local),
-            notificationDetails,
-            payload: todo.id,
-            androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
-            uiLocalNotificationDateInterpretation: fln.UILocalNotificationDateInterpretation.absoluteTime,
-          );
+        final DateTime preTime =
+            todo.createdAt.subtract(const Duration(minutes: 5));
+        final Duration preDiff = preTime.difference(DateTime.now());
+        if (!preDiff.isNegative) {
+          _winTimers['${todo.id}_pre']?.cancel();
+          _winTimers['${todo.id}_pre'] = Timer(preDiff, () async {
+            String preTitle = '⚠️ Due soon: ${todo.title}';
+            String preBody = 'Starting in 5 minutes';
+
+            try {
+              final notification =
+                  LocalNotification(title: preTitle, body: preBody);
+              await notification.show();
+            } catch (_) {}
+
+            try {
+              await SystemSound.play(SystemSoundType.alert);
+            } catch (_) {}
+
+            if (_inAppNotifier != null) {
+              _inAppNotifier!(preTitle, preBody);
+            }
+          });
         }
       }
     }
@@ -254,7 +308,9 @@ class NotificationService {
 
   static Future<void> cancelAllNotifications() async {
     if (_isDesktop) {
-      for (final t in _winTimers.values) { t.cancel(); }
+      for (final t in _winTimers.values) {
+        t.cancel();
+      }
       _winTimers.clear();
       return;
     }
@@ -263,13 +319,6 @@ class NotificationService {
   }
 
   static Future<void> rescheduleNotification(model.Todo todo) async {
-    if (_isDesktop) {
-      await cancelNotification(todo.id);
-      await scheduleNotification(todo);
-      return;
-    }
-    if (!_isMobile) return;
-    // Cancel existing notification and schedule new one
     await cancelNotification(todo.id);
     await scheduleNotification(todo);
   }
@@ -278,16 +327,21 @@ class NotificationService {
   static Future<void> playTestSound() async {
     if (_isDesktop) {
       try {
-        final notification = LocalNotification(title: 'Test Notification', body: 'This is a test notification to check sound');
+        final notification = LocalNotification(
+            title: 'Test Notification',
+            body: 'This is a test notification to check sound');
         await notification.show();
       } catch (_) {}
-      try { await SystemSound.play(SystemSoundType.alert); } catch (_) {}
+      try {
+        await SystemSound.play(SystemSoundType.alert);
+      } catch (_) {}
       return;
     }
     if (!_isMobile) return;
     try {
       final String? selectedSound = await _resolveSelectedSound();
-      final fln.AndroidNotificationDetails androidDetails = fln.AndroidNotificationDetails(
+      final fln.AndroidNotificationDetails androidDetails =
+          fln.AndroidNotificationDetails(
         'todo_reminders',
         'Todo Reminders',
         channelDescription: 'Notifications for todo reminders',
@@ -299,7 +353,8 @@ class NotificationService {
             : fln.RawResourceAndroidNotificationSound(selectedSound),
       );
 
-      final fln.DarwinNotificationDetails iosDetails = fln.DarwinNotificationDetails(
+      final fln.DarwinNotificationDetails iosDetails =
+          fln.DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
@@ -316,13 +371,13 @@ class NotificationService {
         notificationDetails,
       );
     } catch (e) {
-      // ignore
+      debugPrint('NotificationService: playTestSound failed: $e');
     }
   }
 
   // Assume system notification sound on mobile when not customized
   static Future<bool> audioAssetExists() async {
-    if (_isWindows) return true;
+    if (_isDesktop) return true;
     if (!_isMobile) return false;
     return true;
   }
@@ -339,7 +394,23 @@ class NotificationService {
   }
 
   // Register a callback for in-app notifications (shows snackbar/dialog when task is due)
-  static void registerInAppNotifier(void Function(String title, String body) fn) {
+  static void registerInAppNotifier(
+      void Function(String title, String body) fn) {
     _inAppNotifier = fn;
+  }
+
+  /// Get the count of currently pending (scheduled) notifications.
+  /// Useful to verify notifications are actually registered with the OS.
+  static Future<int> getPendingNotificationCount() async {
+    if (!_isMobile) return _winTimers.length;
+    try {
+      final pending = await _notifications.pendingNotificationRequests();
+      debugPrint(
+          'NotificationService: ${pending.length} pending notifications');
+      return pending.length;
+    } catch (e) {
+      debugPrint('NotificationService: Failed to get pending count: $e');
+      return 0;
+    }
   }
 }
