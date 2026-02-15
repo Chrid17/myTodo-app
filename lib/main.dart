@@ -104,15 +104,24 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const primaryColor = Color(0xFF7C3AED);
     return MaterialApp(
-      title: 'Todo App',
+      title: 'My Tasks',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: primaryColor,
           brightness: Brightness.light,
+          primary: primaryColor,
+        ),
+        appBarTheme: const AppBarTheme(
+          centerTitle: true,
+          elevation: 0,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
       home: TodoListPage(

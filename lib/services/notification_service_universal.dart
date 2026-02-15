@@ -206,14 +206,14 @@ class NotificationService {
         debugPrint(
             'NotificationService: Scheduled notification for "${todo.title}" at ${todo.createdAt}');
 
-        // Schedule repeat reminders at T+1min, T+2min, T+3min, T+4min, T+5min
-        for (int i = 1; i <= 5; i++) {
+        // Schedule repeat reminders at T+1min, T+2min
+        for (int i = 1; i <= 2; i++) {
           final DateTime repeatTime = todo.createdAt.add(Duration(minutes: i));
           if (repeatTime.isAfter(DateTime.now())) {
             final int repeatId = '${todo.id}_repeat_$i'.hashCode;
             await _notifications.zonedSchedule(
               repeatId,
-              'Reminder ($i/5): ${todo.title}',
+              'Reminder ($i/2): ${todo.title}',
               todo.description.isNotEmpty
                   ? todo.description
                   : 'Don\'t forget this task!',
@@ -285,14 +285,14 @@ class NotificationService {
           }
         });
       }
-      // Repeat reminders at T+1, T+2, T+3, T+4, T+5 min
-      for (int i = 1; i <= 5; i++) {
+      // Repeat reminders at T+1, T+2 min
+      for (int i = 1; i <= 2; i++) {
         final DateTime repeatTime = todo.createdAt.add(Duration(minutes: i));
         final Duration repeatDiff = repeatTime.difference(DateTime.now());
         if (!repeatDiff.isNegative) {
           _winTimers['${todo.id}_repeat_$i']?.cancel();
           _winTimers['${todo.id}_repeat_$i'] = Timer(repeatDiff, () async {
-            final rTitle = 'Reminder ($i/5): ${todo.title}';
+            final rTitle = 'Reminder ($i/2): ${todo.title}';
             final rBody = todo.description.isNotEmpty ? todo.description : 'Don\'t forget this task!';
             try {
               final notification = LocalNotification(title: rTitle, body: rBody);
@@ -336,7 +336,7 @@ class NotificationService {
     if (_isDesktop) {
       _winTimers.remove('${todoId}_main')?.cancel();
       _winTimers.remove('${todoId}_pre')?.cancel();
-      for (int i = 1; i <= 5; i++) {
+      for (int i = 1; i <= 2; i++) {
         _winTimers.remove('${todoId}_repeat_$i')?.cancel();
       }
       return;
@@ -344,7 +344,7 @@ class NotificationService {
     if (!_isMobile) return;
     await _notifications.cancel(todoId.hashCode);
     await _notifications.cancel('${todoId}_pre'.hashCode);
-    for (int i = 1; i <= 5; i++) {
+    for (int i = 1; i <= 2; i++) {
       await _notifications.cancel('${todoId}_repeat_$i'.hashCode);
     }
   }

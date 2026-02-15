@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'dart:async';
 import '../../models/todo.dart';
 import '../../services/supabase_todo_service.dart';
 import '../../services/notification_service.dart';
+import '../../utils/date_utils.dart' as app_date;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:intl/intl.dart';
 
 enum TodoFilter { all, active, completed }
+
+enum TodoSort { dueDate, priority, name }
 
 class TodoListPage extends StatefulWidget {
   final bool readOnly;
@@ -22,9 +25,13 @@ class _TodoListPageState extends State<TodoListPage> {
   final SupabaseTodoService _todoService = SupabaseTodoService();
   final TextEditingController _taskController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   
   List<Todo> _todos = [];
   TodoFilter _currentFilter = TodoFilter.all;
+  TodoSort _sortOrder = TodoSort.dueDate;
+  String _searchQuery = '';
+  String? _loadError;
   bool _isLoading = true;
   Priority _selectedPriority = Priority.medium;
   DateTime? _selectedDueDate;
@@ -47,6 +54,9 @@ class _TodoListPageState extends State<TodoListPage> {
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      if (mounted) setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
+    });
     NotificationService.registerInAppNotifier((title, body) {
       if (!mounted) return;
       _showReminderDialog(title, body);
@@ -179,6 +189,7 @@ class _TodoListPageState extends State<TodoListPage> {
     _uiTick?.cancel();
     _taskController.dispose();
     _descriptionController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -260,40 +271,141 @@ class _TodoListPageState extends State<TodoListPage> {
   }
 
   Future<void> _loadTodos() async {
-    setState(() => _isLoading = true);
-    final todos = await _todoService.getTodos();
     setState(() {
-      _todos = todos;
-      _isLoading = false;
+      _isLoading = true;
+      _loadError = null;
     });
+    try {
+      final todos = await _todoService.getTodos();
+      if (mounted) {
+        setState(() {
+          _todos = todos;
+          _isLoading = false;
+          _loadError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _loadError = 'Could not load tasks. Pull down to retry.';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: _loadTodos,
+            ),
+          ),
+        );
+      }
+    }
   }
 
   List<Todo> get _filteredTodos {
+    List<Todo> list;
     switch (_currentFilter) {
       case TodoFilter.active:
-        return _todos.where((todo) => !todo.isCompleted).toList();
+        list = _todos.where((todo) => !todo.isCompleted).toList();
+        break;
       case TodoFilter.completed:
-        return _todos.where((todo) => todo.isCompleted).toList();
+        list = _todos.where((todo) => todo.isCompleted).toList();
+        break;
       case TodoFilter.all:
-        return _todos;
+        list = List<Todo>.from(_todos);
+        break;
     }
+    // Search filter
+    if (_searchQuery.isNotEmpty) {
+      list = list.where((t) {
+        final matchTitle = t.title.toLowerCase().contains(_searchQuery);
+        final matchDesc = t.description.toLowerCase().contains(_searchQuery);
+        return matchTitle || matchDesc;
+      }).toList();
+    }
+    // Sort
+    switch (_sortOrder) {
+      case TodoSort.dueDate:
+        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        break;
+      case TodoSort.priority:
+        final order = {Priority.high: 0, Priority.medium: 1, Priority.low: 2};
+        list.sort((a, b) => (order[a.priority] ?? 1).compareTo(order[b.priority] ?? 1));
+        break;
+      case TodoSort.name:
+        list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+    }
+    return list;
   }
 
   Future<void> _toggleTodo(Todo todo) async {
     if (_isReadOnly) return;
-    final updatedTodo = todo.copyWith(isCompleted: !todo.isCompleted);
-    await _todoService.updateTodo(updatedTodo);
-    await _loadTodos();
+    HapticFeedback.lightImpact();
+    try {
+      final updatedTodo = todo.copyWith(isCompleted: !todo.isCompleted);
+      await _todoService.updateTodo(updatedTodo);
+      await _loadTodos();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update: $e')),
+        );
+      }
+    }
   }
 
-  Future<void> _deleteTodo(String id) async {
+  Future<void> _deleteTodo(String id, {bool showUndo = true}) async {
     if (_isReadOnly) return;
-    await _todoService.deleteTodo(id);
-    await _loadTodos();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task deleted')),
+    final todo = _todos.firstWhere((t) => t.id == id, orElse: () => _todos.first);
+    try {
+      await _todoService.deleteTodo(id);
+      await _loadTodos();
+      if (mounted && showUndo) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Task deleted'),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () => _restoreTodo(todo),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _restoreTodo(Todo todo) async {
+    try {
+      final restored = Todo(
+        id: '',
+        title: todo.title,
+        description: todo.description,
+        isCompleted: todo.isCompleted,
+        createdAt: todo.createdAt,
+        priority: todo.priority,
       );
+      await _todoService.addTodo(restored);
+      await _loadTodos();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Task restored')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not restore: $e')),
+        );
+      }
     }
   }
 
@@ -423,48 +535,101 @@ class _TodoListPageState extends State<TodoListPage> {
     final dueAt = _selectedDueDate ?? DateTime.now().add(const Duration(hours: 1));
     final priority = _selectedPriority;
 
-    if (_editingTodoId != null) {
-      // Update existing task
-      final existing = _todos.firstWhere((t) => t.id == _editingTodoId);
-      final updated = existing.copyWith(
-        title: title,
-        description: description,
-        createdAt: dueAt,
-        priority: priority,
-      );
-      await _todoService.updateTodo(updated);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Task updated!')),
+    try {
+      if (_editingTodoId != null) {
+        final existing = _todos.firstWhere((t) => t.id == _editingTodoId);
+        final updated = existing.copyWith(
+          title: title,
+          description: description,
+          createdAt: dueAt,
+          priority: priority,
         );
+        await _todoService.updateTodo(updated);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Task updated!')),
+          );
+        }
+      } else {
+        final newTodo = Todo(
+          id: '',
+          title: title,
+          description: description,
+          createdAt: dueAt,
+          priority: priority,
+          isCompleted: false,
+        );
+        await _todoService.addTodo(newTodo);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Task added!')),
+          );
+        }
       }
-    } else {
-      // Add new task
-      final newTodo = Todo(
-        id: '',
-        title: title,
-        description: description,
-        createdAt: dueAt,
-        priority: priority,
-        isCompleted: false,
-      );
-      await _todoService.addTodo(newTodo);
+
+      _taskController.clear();
+      _descriptionController.clear();
+      setState(() {
+        _editingTodoId = null;
+        _selectedPriority = Priority.medium;
+        _selectedDueDate = null;
+      });
+
+      await _loadTodos();
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Task added!')),
+          SnackBar(content: Text('Failed to save: $e')),
         );
       }
     }
+  }
 
-    _taskController.clear();
-    _descriptionController.clear();
-    setState(() {
-      _editingTodoId = null;
-      _selectedPriority = Priority.medium;
-      _selectedDueDate = null;
-    });
+  Future<void> _clearCompleted() async {
+    if (_isReadOnly) return;
+    final completed = _todos.where((t) => t.isCompleted).toList();
+    if (completed.isEmpty) return;
 
-    await _loadTodos();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Completed'),
+        content: Text(
+          'Delete ${completed.length} completed task${completed.length > 1 ? 's' : ''}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Clear', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        for (final t in completed) {
+          await _todoService.deleteTodo(t.id);
+        }
+        await _loadTodos();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${completed.length} task${completed.length > 1 ? 's' : ''} cleared')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to clear: $e')),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _selectDueDate() async {
@@ -773,6 +938,38 @@ class _TodoListPageState extends State<TodoListPage> {
               ),
             ),
 
+            // Search bar
+            if (!_isReadOnly && _todos.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search tasks...',
+                    prefixIcon: const Icon(Icons.search, color: Color(0xFF7C3AED), size: 22),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 20),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            tooltip: 'Clear search',
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  textInputAction: TextInputAction.search,
+                  style: const TextStyle(fontSize: 15),
+                ),
+              ),
+
             // Task Input Area - Added Padding
             if (!_isReadOnly) Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -805,6 +1002,8 @@ class _TodoListPageState extends State<TodoListPage> {
                               hintStyle: const TextStyle(color: Colors.grey, fontSize: 16),
                             ),
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _addTask(),
                           ),
                         ),
                         if (_editingTodoId != null)
@@ -958,7 +1157,7 @@ class _TodoListPageState extends State<TodoListPage> {
                                 Text(
                                   _selectedDueDate == null
                                       ? 'Set due date & time'
-                                      : DateFormat('MM/dd HH:mm').format(_selectedDueDate!),
+                                      : app_date.formatTaskDueDate(_selectedDueDate!),
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: Colors.grey.shade700,
@@ -1045,25 +1244,69 @@ class _TodoListPageState extends State<TodoListPage> {
                     onTap: () => setState(() => _currentFilter = TodoFilter.completed),
                   ),
                   const Spacer(),
-                  // Priority Filter Dropdown
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'All Priorities',
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                  // Clear completed
+                  if (!_isReadOnly && _completedCount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: TextButton.icon(
+                        onPressed: _clearCompleted,
+                        icon: const Icon(Icons.clear_all, size: 18),
+                        label: const Text('Clear completed'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey.shade700,
                         ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.arrow_drop_down, size: 20, color: Colors.grey.shade700),
-                      ],
+                      ),
                     ),
+                  // Sort dropdown
+                  PopupMenuButton<TodoSort>(
+                    offset: const Offset(0, 40),
+                    icon: const Icon(Icons.sort, size: 20, color: Color(0xFF7C3AED)),
+                    tooltip: 'Sort',
+                    onSelected: (v) => setState(() => _sortOrder = v),
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: TodoSort.dueDate,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.schedule,
+                              size: 20,
+                              color: _sortOrder == TodoSort.dueDate ? const Color(0xFF7C3AED) : null,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text('Due date'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: TodoSort.priority,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.flag,
+                              size: 20,
+                              color: _sortOrder == TodoSort.priority ? const Color(0xFF7C3AED) : null,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text('Priority'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: TodoSort.name,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.sort_by_alpha,
+                              size: 20,
+                              color: _sortOrder == TodoSort.name ? const Color(0xFF7C3AED) : null,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text('Name A-Z'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1074,9 +1317,11 @@ class _TodoListPageState extends State<TodoListPage> {
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFF7C3AED)))
-                  : _filteredTodos.isEmpty
-                      ? _buildEmptyState()
-                      : RefreshIndicator(
+                  : _loadError != null
+                      ? _buildErrorState()
+                      : _filteredTodos.isEmpty
+                          ? _buildEmptyState()
+                          : RefreshIndicator(
                           color: const Color(0xFF7C3AED),
                           onRefresh: _isReadOnly ? () async {} : _loadTodos,
                           child: ListView.builder(
@@ -1087,7 +1332,7 @@ class _TodoListPageState extends State<TodoListPage> {
                             itemCount: _filteredTodos.length,
                             itemBuilder: (context, index) {
                               final todo = _filteredTodos[index];
-                              return _TaskCard(
+                              final card = _TaskCard(
                                 todo: todo,
                                 onToggle: _isReadOnly ? () {} : () => _toggleTodo(todo),
                                 onDelete: _isReadOnly ? () {} : () => _deleteTodo(todo.id),
@@ -1096,6 +1341,25 @@ class _TodoListPageState extends State<TodoListPage> {
                                 isSelected: _selectedTodoIds.contains(todo.id),
                                 onSelectionToggle: () => _toggleTodoSelection(todo.id),
                               );
+                              if (!_isReadOnly && !_isSelectionMode) {
+                                return Dismissible(
+                                  key: Key(todo.id),
+                                  direction: DismissDirection.endToStart,
+                                  background: Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    alignment: Alignment.centerRight,
+                                    padding: const EdgeInsets.only(right: 24),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade400,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 32),
+                                  ),
+                                  onDismissed: (_) => _deleteTodo(todo.id, showUndo: true),
+                                  child: card,
+                                );
+                              }
+                              return card;
                             },
                           ),
                         ),
@@ -1154,23 +1418,58 @@ class _TodoListPageState extends State<TodoListPage> {
     );
   }
 
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_off, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              _loadError ?? 'Something went wrong',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadTodos,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C3AED),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     String message;
     IconData icon;
 
-    switch (_currentFilter) {
-      case TodoFilter.active:
-        message = 'No active tasks!\nTake a break! 🎉';
-        icon = Icons.check_circle_outline;
-        break;
-      case TodoFilter.completed:
-        message = 'No completed tasks yet.\nGet started! 💪';
-        icon = Icons.assignment_turned_in_outlined;
-        break;
-      case TodoFilter.all:
-        message = 'No tasks yet!\nAdd one above to get started';
-        icon = Icons.assignment_outlined;
-        break;
+    if (_searchQuery.isNotEmpty) {
+      message = 'No tasks match "$_searchQuery"';
+      icon = Icons.search_off;
+    } else {
+      switch (_currentFilter) {
+        case TodoFilter.active:
+          message = 'No active tasks!\nTake a break! 🎉';
+          icon = Icons.check_circle_outline;
+          break;
+        case TodoFilter.completed:
+          message = 'No completed tasks yet.\nGet started! 💪';
+          icon = Icons.assignment_turned_in_outlined;
+          break;
+        case TodoFilter.all:
+          message = 'No tasks yet!\nAdd one above to get started';
+          icon = Icons.assignment_outlined;
+          break;
+      }
     }
 
     return Center(
@@ -1473,7 +1772,7 @@ class _TaskCard extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  DateFormat('MM/dd HH:mm').format(todo.createdAt),
+                                  app_date.formatTaskDueDate(todo.createdAt),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: isOverdue ? FontWeight.bold : FontWeight.normal,

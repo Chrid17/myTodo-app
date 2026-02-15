@@ -11,6 +11,7 @@ class NotificationService {
   static final Map<String, Timer> _timers = {};
   static web.HTMLAudioElement? _audio;
   static String? _generatedBeepDataUri;
+  static Timer? _soundStopTimer;
   
   // In-app notification callback for showing alerts when app is open
   static void Function(String title, String body)? _inAppNotifier;
@@ -93,14 +94,14 @@ class NotificationService {
         _timers.remove(id);
       });
 
-      // Repeat reminders at T+1, T+2, T+3, T+4, T+5 min
-      for (int i = 1; i <= 5; i++) {
+      // Repeat reminders at T+1, T+2 min
+      for (int i = 1; i <= 2; i++) {
         final DateTime repeatTime = todo.createdAt.add(Duration(minutes: i));
         final int repeatMs = repeatTime.difference(DateTime.now()).inMilliseconds;
         if (repeatMs > 0) {
           final repeatId = '${id}_repeat_$i';
           _timers[repeatId] = Timer(Duration(milliseconds: repeatMs), () {
-            final title = 'Reminder ($i/5): ${todo.title}';
+            final title = 'Reminder ($i/2): ${todo.title}';
             final body = todo.description.isNotEmpty ? todo.description : 'Don\'t forget this task!';
             try {
               if (_notificationSupported && _getPermissionString() == 'granted') {
@@ -205,20 +206,33 @@ class NotificationService {
     }
   }
 
+  static const Duration _soundDuration = Duration(minutes: 3);
+
   static void _playAudio() {
     try {
+      _soundStopTimer?.cancel();
+      web.HTMLAudioElement? elementToPlay;
       if (_audio != null) {
         _audio!.currentTime = 0;
+        _audio!.loop = true; // Loop for up to 3 min
         _audio!.play();
-        return;
+        elementToPlay = _audio;
+      } else {
+        _generatedBeepDataUri ??= _generateBeepDataUri();
+        final gen = web.HTMLAudioElement()
+          ..src = _generatedBeepDataUri!
+          ..loop = true // Loop for up to 3 min
+          ..preload = 'auto';
+        gen.play();
+        elementToPlay = gen;
       }
-
-      // If no asset audio, try generated beep data URI
-      _generatedBeepDataUri ??= _generateBeepDataUri();
-      final gen = web.HTMLAudioElement()
-        ..src = _generatedBeepDataUri!
-        ..preload = 'auto';
-      gen.play();
+      // Stop sound after 3 minutes
+      _soundStopTimer = Timer(_soundDuration, () {
+        try {
+          elementToPlay?.pause();
+          elementToPlay?.loop = false;
+        } catch (_) {}
+      });
     } catch (e) {
       // Audio play failed
     }
@@ -227,7 +241,7 @@ class NotificationService {
   static Future<void> cancelNotification(String todoId) async {
     _timers.remove(todoId)?.cancel();
     _timers.remove('${todoId}_pre')?.cancel();
-    for (int i = 1; i <= 5; i++) {
+    for (int i = 1; i <= 2; i++) {
       _timers.remove('${todoId}_repeat_$i')?.cancel();
     }
   }
