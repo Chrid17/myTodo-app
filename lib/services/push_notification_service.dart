@@ -47,7 +47,21 @@ class PushNotificationService {
       await db.from(_table).insert(insertData);
       debugPrint('PushNotificationService: SUCCESS - notification scheduled for: ${todo.title}');
       
-      // For high priority, also schedule a 5-minute reminder
+      // Schedule repeat reminders: at T+1min, T+2min, T+3min, T+4min, T+5min (5 reminders over 5 min)
+      for (int i = 1; i <= 5; i++) {
+        final repeatTime = todo.createdAt.add(Duration(minutes: i));
+        if (repeatTime.isAfter(DateTime.now())) {
+          await db.from(_table).insert({
+            'todo_id': '${todo.id}_repeat_$i',
+            'user_id': user?.id,
+            'title': '🔔 Reminder ($i/5): ${todo.title}',
+            'body': todo.description.isNotEmpty ? todo.description : 'Don\'t forget this task!',
+            'scheduled_at': repeatTime.toUtc().toIso8601String(),
+          });
+        }
+      }
+      
+      // For high priority, also schedule a 5-minute prior reminder
       if (todo.priority == Priority.high) {
         final preTime = todo.createdAt.subtract(const Duration(minutes: 5));
         if (preTime.isAfter(DateTime.now())) {
@@ -72,16 +86,14 @@ class PushNotificationService {
     try {
       final db = AppSupabase.client;
       
-      // Delete both main and pre notifications
-      await db
-          .from(_table)
-          .delete()
-          .eq('todo_id', todoId);
-      
-      await db
-          .from(_table)
-          .delete()
-          .eq('todo_id', '${todoId}_pre');
+      // Delete main, pre, and all repeat notifications
+      final idsToDelete = [todoId, '${todoId}_pre'];
+      for (int i = 1; i <= 5; i++) {
+        idsToDelete.add('${todoId}_repeat_$i');
+      }
+      for (final id in idsToDelete) {
+        await db.from(_table).delete().eq('todo_id', id);
+      }
           
     } catch (e) {
       debugPrint('Failed to cancel push notification: $e');

@@ -61,6 +61,7 @@ class SupabaseTodoService {
     final res = await _db
         .from(table)
         .select()
+        .eq('user_id', user.id)
         .order('due_at', ascending: false);
 
     final todos = (res as List).cast<Map<String, dynamic>>().map(_fromRow).toList();

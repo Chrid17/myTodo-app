@@ -93,6 +93,27 @@ class NotificationService {
         _timers.remove(id);
       });
 
+      // Repeat reminders at T+1, T+2, T+3, T+4, T+5 min
+      for (int i = 1; i <= 5; i++) {
+        final DateTime repeatTime = todo.createdAt.add(Duration(minutes: i));
+        final int repeatMs = repeatTime.difference(DateTime.now()).inMilliseconds;
+        if (repeatMs > 0) {
+          final repeatId = '${id}_repeat_$i';
+          _timers[repeatId] = Timer(Duration(milliseconds: repeatMs), () {
+            final title = 'Reminder ($i/5): ${todo.title}';
+            final body = todo.description.isNotEmpty ? todo.description : 'Don\'t forget this task!';
+            try {
+              if (_notificationSupported && _getPermissionString() == 'granted') {
+                web.Notification(title, web.NotificationOptions(body: body, tag: repeatId));
+              }
+            } catch (_) {}
+            _playAudio();
+            if (_inAppNotifier != null) _inAppNotifier!(title, body);
+            _timers.remove(repeatId);
+          });
+        }
+      }
+
       // For high priority, schedule a 5-minute prior reminder
       if (todo.priority == Priority.high) {
         final DateTime preTime = todo.createdAt.subtract(
@@ -204,10 +225,11 @@ class NotificationService {
   }
 
   static Future<void> cancelNotification(String todoId) async {
-    final timer = _timers.remove(todoId);
-    timer?.cancel();
-    final preTimer = _timers.remove('${todoId}_pre');
-    preTimer?.cancel();
+    _timers.remove(todoId)?.cancel();
+    _timers.remove('${todoId}_pre')?.cancel();
+    for (int i = 1; i <= 5; i++) {
+      _timers.remove('${todoId}_repeat_$i')?.cancel();
+    }
   }
 
   static Future<void> cancelAllNotifications() async {

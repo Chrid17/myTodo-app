@@ -34,6 +34,9 @@ class _TodoListPageState extends State<TodoListPage> {
   bool _isSelectionMode = false;
   final Set<String> _selectedTodoIds = {};
   
+  // Edit mode - when editing an existing task
+  String? _editingTodoId;
+  
   // iOS Safari banner
   bool _showIOSBanner = false;
 
@@ -323,6 +326,12 @@ class _TodoListPageState extends State<TodoListPage> {
     });
   }
 
+  void _deselectAll() {
+    setState(() {
+      _selectedTodoIds.clear();
+    });
+  }
+
   Future<void> _deleteSelected() async {
     if (_selectedTodoIds.isEmpty) return;
     
@@ -383,53 +392,79 @@ class _TodoListPageState extends State<TodoListPage> {
 
   void _editTask(Todo todo) {
     if (_isReadOnly) return;
-    // Populate the form with the task data
     _taskController.text = todo.title;
     _descriptionController.text = todo.description;
     setState(() {
+      _editingTodoId = todo.id;
       _selectedPriority = todo.priority;
       _selectedDueDate = todo.createdAt;
     });
-    
-    // Delete the old task - it will be re-added when user clicks +
-    _deleteTodo(todo.id);
-    
-    // Show a message
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Editing task - modify and click + to save')),
+      const SnackBar(content: Text('Editing task - change and tap + to save')),
     );
+  }
+
+  void _cancelEdit() {
+    setState(() {
+      _editingTodoId = null;
+      _taskController.clear();
+      _descriptionController.clear();
+      _selectedPriority = Priority.medium;
+      _selectedDueDate = null;
+    });
   }
 
   Future<void> _addTask() async {
     if (_isReadOnly) return;
     if (_taskController.text.trim().isEmpty) return;
 
-    final newTodo = Todo(
-      id: '', // let Supabase generate UUID
-      title: _taskController.text.trim(),
-      description: _descriptionController.text.trim(),
-      createdAt: _selectedDueDate ?? DateTime.now().add(const Duration(hours: 1)),
-      priority: _selectedPriority,
-      isCompleted: false,
-    );
+    final title = _taskController.text.trim();
+    final description = _descriptionController.text.trim();
+    final dueAt = _selectedDueDate ?? DateTime.now().add(const Duration(hours: 1));
+    final priority = _selectedPriority;
 
-    await _todoService.addTodo(newTodo);
+    if (_editingTodoId != null) {
+      // Update existing task
+      final existing = _todos.firstWhere((t) => t.id == _editingTodoId);
+      final updated = existing.copyWith(
+        title: title,
+        description: description,
+        createdAt: dueAt,
+        priority: priority,
+      );
+      await _todoService.updateTodo(updated);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Task updated!')),
+        );
+      }
+    } else {
+      // Add new task
+      final newTodo = Todo(
+        id: '',
+        title: title,
+        description: description,
+        createdAt: dueAt,
+        priority: priority,
+        isCompleted: false,
+      );
+      await _todoService.addTodo(newTodo);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Task added!')),
+        );
+      }
+    }
 
-    // Clear form
     _taskController.clear();
     _descriptionController.clear();
     setState(() {
+      _editingTodoId = null;
       _selectedPriority = Priority.medium;
       _selectedDueDate = null;
     });
 
     await _loadTodos();
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task added successfully!')),
-      );
-    }
   }
 
   Future<void> _selectDueDate() async {
@@ -764,24 +799,37 @@ class _TodoListPageState extends State<TodoListPage> {
                         Expanded(
                           child: TextField(
                             controller: _taskController,
-                            decoration: const InputDecoration(
-                              hintText: 'Add a new task...',
+                            decoration: InputDecoration(
+                              hintText: _editingTodoId != null ? 'Edit task...' : 'Add a new task...',
                               border: InputBorder.none,
-                              hintStyle: TextStyle(color: Colors.grey, fontSize: 16),
+                              hintStyle: const TextStyle(color: Colors.grey, fontSize: 16),
                             ),
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                           ),
                         ),
+                        if (_editingTodoId != null)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: IconButton(
+                              icon: Icon(Icons.close, color: Colors.grey.shade600),
+                              onPressed: _cancelEdit,
+                              tooltip: 'Cancel edit',
+                            ),
+                          ),
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.black,
+                            color: _editingTodoId != null ? const Color(0xFF7C3AED) : Colors.black,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: IconButton(
-                            icon: const Icon(Icons.add, color: Colors.white),
+                            icon: Icon(
+                              _editingTodoId != null ? Icons.check : Icons.add,
+                              color: Colors.white,
+                            ),
                             onPressed: _addTask,
                             padding: const EdgeInsets.all(8),
                             constraints: const BoxConstraints(),
+                            tooltip: _editingTodoId != null ? 'Save changes' : 'Add task',
                           ),
                         ),
                       ],
@@ -927,6 +975,53 @@ class _TodoListPageState extends State<TodoListPage> {
               ),
             ),
 
+            // Select All / Deselect All / Delete All - Right above tasks
+            if (!_isReadOnly && _filteredTodos.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Row(
+                  children: [
+                    if (_isSelectionMode) ...[
+                      TextButton.icon(
+                        onPressed: _selectAll,
+                        icon: const Icon(Icons.select_all, size: 18),
+                        label: const Text('Select All'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF7C3AED),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: _deselectAll,
+                        icon: const Icon(Icons.deselect, size: 18),
+                        label: const Text('Deselect'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey.shade700,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_selectedTodoIds.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: _deleteSelected,
+                          icon: const Icon(Icons.delete_forever, size: 18, color: Colors.red),
+                          label: Text(
+                            'Delete ${_selectedTodoIds.length}',
+                            style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                    ] else
+                      TextButton.icon(
+                        onPressed: _toggleSelectionMode,
+                        icon: const Icon(Icons.checklist, size: 18),
+                        label: const Text('Select multiple'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF7C3AED),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
             // Filter Tabs - Added Padding
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -985,6 +1080,9 @@ class _TodoListPageState extends State<TodoListPage> {
                           color: const Color(0xFF7C3AED),
                           onRefresh: _isReadOnly ? () async {} : _loadTodos,
                           child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                             itemCount: _filteredTodos.length,
                             itemBuilder: (context, index) {

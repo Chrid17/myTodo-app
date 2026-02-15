@@ -206,6 +206,27 @@ class NotificationService {
         debugPrint(
             'NotificationService: Scheduled notification for "${todo.title}" at ${todo.createdAt}');
 
+        // Schedule repeat reminders at T+1min, T+2min, T+3min, T+4min, T+5min
+        for (int i = 1; i <= 5; i++) {
+          final DateTime repeatTime = todo.createdAt.add(Duration(minutes: i));
+          if (repeatTime.isAfter(DateTime.now())) {
+            final int repeatId = '${todo.id}_repeat_$i'.hashCode;
+            await _notifications.zonedSchedule(
+              repeatId,
+              'Reminder ($i/5): ${todo.title}',
+              todo.description.isNotEmpty
+                  ? todo.description
+                  : 'Don\'t forget this task!',
+              tz.TZDateTime.from(repeatTime, tz.local),
+              notificationDetails,
+              payload: todo.id,
+              androidScheduleMode: fln.AndroidScheduleMode.exactAllowWhileIdle,
+              uiLocalNotificationDateInterpretation:
+                  fln.UILocalNotificationDateInterpretation.absoluteTime,
+            );
+          }
+        }
+
         // For high priority, also schedule a 5-minute prior reminder
         if (todo.priority == model.Priority.high) {
           final DateTime preTime =
@@ -264,6 +285,24 @@ class NotificationService {
           }
         });
       }
+      // Repeat reminders at T+1, T+2, T+3, T+4, T+5 min
+      for (int i = 1; i <= 5; i++) {
+        final DateTime repeatTime = todo.createdAt.add(Duration(minutes: i));
+        final Duration repeatDiff = repeatTime.difference(DateTime.now());
+        if (!repeatDiff.isNegative) {
+          _winTimers['${todo.id}_repeat_$i']?.cancel();
+          _winTimers['${todo.id}_repeat_$i'] = Timer(repeatDiff, () async {
+            final rTitle = 'Reminder ($i/5): ${todo.title}';
+            final rBody = todo.description.isNotEmpty ? todo.description : 'Don\'t forget this task!';
+            try {
+              final notification = LocalNotification(title: rTitle, body: rBody);
+              await notification.show();
+            } catch (_) {}
+            try { await SystemSound.play(SystemSoundType.alert); } catch (_) {}
+            if (_inAppNotifier != null) _inAppNotifier!(rTitle, rBody);
+          });
+        }
+      }
       if (todo.priority == model.Priority.high) {
         final DateTime preTime =
             todo.createdAt.subtract(const Duration(minutes: 5));
@@ -297,13 +336,17 @@ class NotificationService {
     if (_isDesktop) {
       _winTimers.remove('${todoId}_main')?.cancel();
       _winTimers.remove('${todoId}_pre')?.cancel();
+      for (int i = 1; i <= 5; i++) {
+        _winTimers.remove('${todoId}_repeat_$i')?.cancel();
+      }
       return;
     }
     if (!_isMobile) return;
-    final int notificationId = todoId.hashCode;
-    final int preId = '${todoId}_pre'.hashCode;
-    await _notifications.cancel(notificationId);
-    await _notifications.cancel(preId);
+    await _notifications.cancel(todoId.hashCode);
+    await _notifications.cancel('${todoId}_pre'.hashCode);
+    for (int i = 1; i <= 5; i++) {
+      await _notifications.cancel('${todoId}_repeat_$i'.hashCode);
+    }
   }
 
   static Future<void> cancelAllNotifications() async {
