@@ -11,7 +11,6 @@ class NotificationService {
   static final Map<String, Timer> _timers = {};
   static web.HTMLAudioElement? _audio;
   static String? _generatedBeepDataUri;
-  static Timer? _soundStopTimer;
   
   // In-app notification callback for showing alerts when app is open
   static void Function(String title, String body)? _inAppNotifier;
@@ -206,33 +205,20 @@ class NotificationService {
     }
   }
 
-  static const Duration _soundDuration = Duration(minutes: 3);
-
   static void _playAudio() {
     try {
-      _soundStopTimer?.cancel();
-      web.HTMLAudioElement? elementToPlay;
       if (_audio != null) {
         _audio!.currentTime = 0;
-        _audio!.loop = true; // Loop for up to 3 min
         _audio!.play();
-        elementToPlay = _audio;
-      } else {
-        _generatedBeepDataUri ??= _generateBeepDataUri();
-        final gen = web.HTMLAudioElement()
-          ..src = _generatedBeepDataUri!
-          ..loop = true // Loop for up to 3 min
-          ..preload = 'auto';
-        gen.play();
-        elementToPlay = gen;
+        return;
       }
-      // Stop sound after 3 minutes
-      _soundStopTimer = Timer(_soundDuration, () {
-        try {
-          elementToPlay?.pause();
-          elementToPlay?.loop = false;
-        } catch (_) {}
-      });
+
+      // If no asset audio, try generated beep data URI
+      _generatedBeepDataUri ??= _generateBeepDataUri();
+      final gen = web.HTMLAudioElement()
+        ..src = _generatedBeepDataUri!
+        ..preload = 'auto';
+      gen.play();
     } catch (e) {
       // Audio play failed
     }
